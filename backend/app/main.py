@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from app.database import engine
 from app.patients.routes import router as patient_router
 
 app = FastAPI()
@@ -17,4 +18,3 @@ def health_check():
         "status": "healthy",
         "application": "LabTrack"
     }
-
