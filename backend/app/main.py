@@ -17,3 +17,4 @@ def health_check():
         "status": "healthy",
         "application": "LabTrack"
     }
+
