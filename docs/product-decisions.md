@@ -239,3 +239,4 @@ When a milestone is worth sharing, the simplest suitable format should be used:
 - Short screen recording when necessary
 
 The goal is to document the development journey, not to become a full-time content creator.
+
