@@ -1,9 +1,10 @@
 from datetime import date
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.patients.models import Patient
@@ -12,6 +13,8 @@ router = APIRouter()
 
 
 class PatientCreate(BaseModel):
+    model_config = {"from_attributes": True}
+
     first_name: str
     last_name: str
     date_of_birth: date
@@ -31,6 +34,8 @@ class PatientCreate(BaseModel):
 
 
 class PatientResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
     patient_id: str
     registration_date: date
     patient: PatientCreate
@@ -42,12 +47,20 @@ def register_patient(patient: PatientCreate, db: Session = Depends(get_db)):
 
     new_patient = Patient(patient_id=patient_id, **patient.model_dump())
 
-    db.add(new_patient)
-    db.commit()
-    db.refresh(new_patient)
+    try:
+        db.add(new_patient)
+        db.commit()
+        db.refresh(new_patient)
+
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="A patient with this hospital number already exists.",
+        )
 
     return {
         "patient_id": patient_id,
-        "registration_date": date.today(),
-        "patient": patient,
+        "registration_date": new_patient.registration_date,
+        "patient": new_patient,
     }

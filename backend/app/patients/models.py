@@ -9,6 +9,9 @@ class Patient(Base):
     __tablename__ = "patients"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     patient_id: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    registration_date: Mapped[date] = mapped_column(
+        Date, default=date.today, nullable=False
+    )
     hospital_number: Mapped[str] = mapped_column(
         String(50), unique=True, nullable=False
     )
