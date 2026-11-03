@@ -72,7 +72,12 @@ def register_patient(patient: PatientCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[PatientListResponse])
-def get_patients(search: str | None = None, db: Session = Depends(get_db)):
+def get_patients(
+    search: str | None = None,
+    skip: int = 0,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+):
     query = db.query(Patient)
 
     if search:
@@ -83,6 +88,6 @@ def get_patients(search: str | None = None, db: Session = Depends(get_db)):
             | (Patient.hospital_number.ilike("%" + search + "%"))
         )
 
-    patients = query.all()
+    patients = query.offset(skip).limit(limit).all()
 
     return patients
