@@ -41,6 +41,11 @@ class PatientResponse(BaseModel):
     patient: PatientCreate
 
 
+class PatientListResponse(PatientCreate):
+    patient_id: str
+    registration_date: date
+
+
 @router.post("/", response_model=PatientResponse)
 def register_patient(patient: PatientCreate, db: Session = Depends(get_db)):
     patient_id = f"PT-{str(uuid4())[:8].upper()}"
@@ -64,3 +69,20 @@ def register_patient(patient: PatientCreate, db: Session = Depends(get_db)):
         "registration_date": new_patient.registration_date,
         "patient": new_patient,
     }
+
+
+@router.get("/", response_model=list[PatientListResponse])
+def get_patients(search: str | None = None, db: Session = Depends(get_db)):
+    query = db.query(Patient)
+
+    if search:
+        query = query.filter(
+            (Patient.first_name.ilike("%" + search + "%"))
+            | (Patient.last_name.ilike("%" + search + "%"))
+            | (Patient.patient_id.ilike("%" + search + "%"))
+            | (Patient.hospital_number.ilike("%" + search + "%"))
+        )
+
+    patients = query.all()
+
+    return patients
