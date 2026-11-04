@@ -46,6 +46,27 @@ class PatientListResponse(PatientCreate):
     registration_date: date
 
 
+class PatientUpdate(BaseModel):
+    model_config = {"from_attributes": True}
+
+    first_name: str | None = None
+    last_name: str | None = None
+    date_of_birth: date | None = None
+    sex_at_birth: str | None = None
+    hospital_number: str | None = None
+    patient_type: str | None = None
+
+    phone_number: str | None = None
+    email_address: str | None = None
+    home_address: str | None = None
+
+    clinic_or_ward: str | None = None
+    referring_clinician: str | None = None
+
+    clinical_notes: str | None = None
+    identity_verified: bool | None = None
+
+
 @router.post("/", response_model=PatientResponse)
 def register_patient(patient: PatientCreate, db: Session = Depends(get_db)):
     patient_id = f"PT-{str(uuid4())[:8].upper()}"
@@ -100,6 +121,49 @@ def get_patient(patient_id: str, db: Session = Depends(get_db)):
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found.")
 
+    return {
+        "patient_id": patient.patient_id,
+        "registration_date": patient.registration_date,
+        "patient": patient,
+    }
+
+
+@router.patch("/{patient_id}", response_model=PatientResponse)
+def update_patient(
+    patient_id: str,
+    patient_data: PatientUpdate,
+    db: Session = Depends(get_db),
+):
+    # Find the patient
+    patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
+
+    # Check whether the patient exists
+    if patient is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Patient not found.",
+        )
+
+    # Extract only the fields supplied
+    update_data = patient_data.model_dump(exclude_unset=True)
+
+    # Apply the changes
+    for field, value in update_data.items():
+        setattr(patient, field, value)
+
+    # Save changes
+    try:
+        db.commit()
+        db.refresh(patient)
+
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="A patient with this hospital number already exists.",
+        )
+
+    # Return updated patient
     return {
         "patient_id": patient.patient_id,
         "registration_date": patient.registration_date,
