@@ -41,6 +41,10 @@ class SampleResponse(BaseModel):
     status: str
 
 
+class SampleUpdate(BaseModel):
+    status: str
+
+
 # REGISTER SAMPLE
 @router.post("/", response_model=SampleResponse)
 def register_sample(sample: SampleCreate, db: Session = Depends(get_db)):
@@ -95,3 +99,45 @@ def get_samples(
     samples = query.offset(skip).limit(limit).all()
 
     return samples
+
+
+@router.get("/{sample_id}", response_model=SampleResponse)
+def get_sample(sample_id: str, db: Session = Depends(get_db)):
+
+    # Find the sample
+    sample = db.query(Sample).filter(Sample.sample_id == sample_id).first()
+
+    # Check whether the sample exists
+    if sample is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Sample not found.",
+        )
+
+    return sample
+
+
+@router.patch("/{sample_id}", response_model=SampleResponse)
+def update_sample_status(
+    sample_id: str,
+    sample_data: SampleUpdate,
+    db: Session = Depends(get_db),
+):
+    # Find the sample
+    sample = db.query(Sample).filter(Sample.sample_id == sample_id).first()
+
+    # Check whether the sample exists
+    if sample is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Sample not found.",
+        )
+
+    # Update the sample status
+    sample.status = sample_data.status
+
+    # Save changes
+    db.commit()
+    db.refresh(sample)
+
+    return sample
