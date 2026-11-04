@@ -91,3 +91,17 @@ def get_patients(
     patients = query.offset(skip).limit(limit).all()
 
     return patients
+
+
+@router.get("/{patient_id}", response_model=PatientResponse)
+def get_patient(patient_id: str, db: Session = Depends(get_db)):
+    patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
+
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found.")
+
+    return {
+        "patient_id": patient.patient_id,
+        "registration_date": patient.registration_date,
+        "patient": patient,
+    }
