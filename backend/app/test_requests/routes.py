@@ -195,19 +195,22 @@ def update_test_request_status(
             detail="Test request not found.",
         )
 
-    allowed_statuses = [
-        "Requested",
-        "Processing",
-        "Awaiting Review",
-        "Completed",
-        "Pending Approval",
-        "Rejected",
-    ]
+    allowed_transitions = {
+        "Pending Approval": {"Requested", "Rejected"},
+        "Requested": {"Processing"},
+        "Processing": {"Awaiting Review"},
+        "Awaiting Review": {"Completed", "Processing", "Rejected"},
+    }
 
-    if request_data.status not in allowed_statuses:
+    if request_data.status not in allowed_transitions.get(
+        test_request.status, set()
+    ):
         raise HTTPException(
             status_code=400,
-            detail="Invalid test request status.",
+            detail=(
+                f"Cannot change test request status from "
+                f"{test_request.status} to {request_data.status}."
+            ),
         )
 
     test_request.status = request_data.status

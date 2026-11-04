@@ -2,7 +2,7 @@ from datetime import date
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -49,22 +49,22 @@ class PatientListResponse(PatientCreate):
 class PatientUpdate(BaseModel):
     model_config = {"from_attributes": True}
 
-    first_name: str | None = None
-    last_name: str | None = None
-    date_of_birth: date | None = None
-    sex_at_birth: str | None = None
-    hospital_number: str | None = None
-    patient_type: str | None = None
+    first_name: str = Field(default=None)
+    last_name: str = Field(default=None)
+    date_of_birth: date = Field(default=None)
+    sex_at_birth: str = Field(default=None)
+    hospital_number: str = Field(default=None)
+    patient_type: str = Field(default=None)
 
     phone_number: str | None = None
     email_address: str | None = None
     home_address: str | None = None
 
-    clinic_or_ward: str | None = None
-    referring_clinician: str | None = None
+    clinic_or_ward: str = Field(default=None)
+    referring_clinician: str = Field(default=None)
 
     clinical_notes: str | None = None
-    identity_verified: bool | None = None
+    identity_verified: bool = Field(default=None)
 
 
 @router.post("/", response_model=PatientResponse)

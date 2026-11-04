@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -13,6 +13,13 @@ class DepartmentCreate(BaseModel):
     name: str
     code: str
     description: str | None = None
+
+
+class DepartmentUpdate(BaseModel):
+    name: str = Field(default=None)
+    code: str = Field(default=None)
+    description: str | None = None
+    is_active: bool = Field(default=None)
 
 
 class DepartmentResponse(BaseModel):
@@ -72,7 +79,7 @@ def get_department(
 @router.patch("/{department_id}", response_model=DepartmentResponse)
 def update_department(
     department_id: int,
-    department_data: DepartmentCreate,
+    department_data: DepartmentUpdate,
     db: Session = Depends(get_db),
 ):
     department = db.query(Department).filter(Department.id == department_id).first()

@@ -3,7 +3,7 @@ from uuid import uuid4
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -30,7 +30,7 @@ class ResultReview(BaseModel):
 
 
 class ResultUpdate(BaseModel):
-    result_value: str | None = None
+    result_value: str = Field(default=None)
     unit: str | None = None
     reference_range: str | None = None
     interpretation: str | None = None

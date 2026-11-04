@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -21,12 +21,12 @@ class TestCreate(BaseModel):
 
 # UPDATE TEST SCHEMA
 class TestUpdate(BaseModel):
-    name: str | None = None
-    code: str | None = None
+    name: str = Field(default=None)
+    code: str = Field(default=None)
     description: str | None = None
-    department_id: int | None = None
-    sample_type: str | None = None
-    is_active: bool | None = None
+    department_id: int = Field(default=None)
+    sample_type: str = Field(default=None)
+    is_active: bool = Field(default=None)
 
 
 # RESPONSE SCHEMA

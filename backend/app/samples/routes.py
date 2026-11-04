@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,6 +13,8 @@ from app.patients.models import Patient
 
 router = APIRouter()
 
+SampleStatus = Literal["Registered", "Received", "On Hold", "Cancelled"]
+
 
 # REQUEST SCHEMA
 class SampleCreate(BaseModel):
@@ -23,7 +26,7 @@ class SampleCreate(BaseModel):
     received_datetime: datetime
     sample_condition: str
     receiving_staff: str
-    status: str
+    status: SampleStatus
 
 
 # RESPONSE SCHEMA
@@ -42,7 +45,7 @@ class SampleResponse(BaseModel):
 
 
 class SampleUpdate(BaseModel):
-    status: str
+    status: SampleStatus
 
 
 # REGISTER SAMPLE
