@@ -10,6 +10,8 @@ from app.tests.models import Test
 from app.tests.routes import router as test_router
 from app.test_requests.models import TestRequest
 from app.test_requests.routes import router as test_request_router
+from app.results.models import Result
+from app.results.routes import router as result_router
 
 app = FastAPI()
 create_tables()
@@ -19,6 +21,7 @@ app.include_router(sample_router, prefix="/samples")
 app.include_router(department_router, prefix="/departments")
 app.include_router(test_router, prefix="/tests")
 app.include_router(test_request_router, prefix="/test-requests")
+app.include_router(result_router, prefix="/results")
 
 
 @app.get("/")

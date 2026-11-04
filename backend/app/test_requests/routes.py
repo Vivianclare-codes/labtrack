@@ -1,3 +1,5 @@
+from datetime import datetime
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -52,7 +54,12 @@ class TestRequestResponse(BaseModel):
     custom_test_name: str | None
     custom_test_description: str | None
     status: str
-    requested_at: object
+    requested_at: datetime
+
+
+# CUSTOM TEST REVIEW SCHEMA
+class CustomTestReview(BaseModel):
+    decision: Literal["approve", "reject"]
 
 
 # CREATE TEST REQUEST
@@ -163,5 +170,89 @@ def get_test_request(
             status_code=404,
             detail="Test request not found.",
         )
+
+    return test_request
+
+
+# UPDATE TEST REQUEST STATUS
+class TestRequestStatusUpdate(BaseModel):
+    status: str
+
+
+@router.patch("/{request_id}/status", response_model=TestRequestResponse)
+def update_test_request_status(
+    request_id: str,
+    request_data: TestRequestStatusUpdate,
+    db: Session = Depends(get_db),
+):
+    test_request = (
+        db.query(TestRequest).filter(TestRequest.request_id == request_id).first()
+    )
+
+    if test_request is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Test request not found.",
+        )
+
+    allowed_statuses = [
+        "Requested",
+        "Processing",
+        "Awaiting Review",
+        "Completed",
+        "Pending Approval",
+        "Rejected",
+    ]
+
+    if request_data.status not in allowed_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid test request status.",
+        )
+
+    test_request.status = request_data.status
+
+    db.commit()
+    db.refresh(test_request)
+
+    return test_request
+
+
+# SUPERVISOR REVIEWS CUSTOM TEST REQUEST
+@router.patch("/{request_id}/review", response_model=TestRequestResponse)
+def review_custom_test(
+    request_id: str,
+    review_data: CustomTestReview,
+    db: Session = Depends(get_db),
+):
+    test_request = (
+        db.query(TestRequest).filter(TestRequest.request_id == request_id).first()
+    )
+
+    if test_request is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Test request not found.",
+        )
+
+    if test_request.test_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Only custom test requests can use this review endpoint.",
+        )
+
+    if test_request.status != "Pending Approval":
+        raise HTTPException(
+            status_code=400,
+            detail="Only pending custom test requests can be reviewed.",
+        )
+
+    if review_data.decision == "approve":
+        test_request.status = "Requested"
+    else:
+        test_request.status = "Rejected"
+
+    db.commit()
+    db.refresh(test_request)
 
     return test_request
