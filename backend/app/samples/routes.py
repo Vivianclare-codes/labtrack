@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +13,7 @@ from app.patients.models import Patient
 router = APIRouter()
 
 
+# REQUEST SCHEMA
 class SampleCreate(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -25,6 +26,7 @@ class SampleCreate(BaseModel):
     status: str
 
 
+# RESPONSE SCHEMA
 class SampleResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -39,6 +41,7 @@ class SampleResponse(BaseModel):
     status: str
 
 
+# REGISTER SAMPLE
 @router.post("/", response_model=SampleResponse)
 def register_sample(sample: SampleCreate, db: Session = Depends(get_db)):
 
@@ -71,3 +74,24 @@ def register_sample(sample: SampleCreate, db: Session = Depends(get_db)):
         )
 
     return new_sample
+
+
+# RETRIEVE ALL SAMPLES
+@router.get("/", response_model=list[SampleResponse])
+def get_samples(
+    search: str | None = None,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Sample)
+
+    if search:
+        query = query.filter(
+            (Sample.sample_id.ilike("%" + search + "%"))
+            | (Sample.sample_type.ilike("%" + search + "%"))
+        )
+
+    samples = query.offset(skip).limit(limit).all()
+
+    return samples
