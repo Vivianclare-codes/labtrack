@@ -1,26 +1,264 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ==========================================================================
+   LabTrack design tokens
+   Source: Figma PDF design audit
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Theme tokens
+   -------------------------------------------------------------------------- */
+
+@theme {
+  /* Remove Tailwind's default palette, radii and shadows */
+  --color-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+
+  /* ---- Colours ---- */
+
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: #ffffff;
+
+  /* Surfaces */
+  --color-page: #f6f7f5;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1f4f2;
+  --color-line: #e1e7e5;
+
+  /* Text */
+  --color-ink: #203540;
+  --color-muted: #718089;
+  --color-faint: #a2adb1;
+
+  /* Brand */
+  --color-primary: #24776d;
+  --color-primary-soft: #e8f3ef;
+
+  /* Sidebar */
+  --color-sidebar: #142e3d;
+  --color-sidebar-active: #203f4d;
+  --color-sidebar-text: #adc0c7;
+  --color-sidebar-accent: #9bd3c2;
+
+  /* Status */
+  --color-warning: #94641c;
+  --color-warning-soft: #fbf3e4;
+
+  --color-info: #4b708e;
+  --color-info-soft: #edf2f7;
+
+  --color-danger: #ab4d4d;
+  --color-danger-soft: #faeeee;
+
+  /* ---- Radii ---- */
+
+  --radius-badge: 5px;
+  --radius-chip: 6px;
+  --radius-control: 7px;
+  --radius-logo: 8px;
+  --radius-card: 10px;
+
+  /* ---- Typography ---- */
+
+  --text-micro: 0.625rem;
+  --text-micro--line-height: 1.4;
+
+  --text-caption: 0.6875rem;
+  --text-caption--line-height: 1.45;
+
+  --text-label: 0.75rem;
+  --text-label--line-height: 1.5;
+
+  --text-body: 0.8125rem;
+  --text-body--line-height: 1.55;
+
+  --text-wordmark: 1.3125rem;
+  --text-wordmark--line-height: 1.2;
+
+  --text-title: 1.75rem;
+  --text-title--line-height: 1.2;
+
+  --text-kpi: 2rem;
+  --text-kpi--line-height: 1.15;
+
+  /* ---- Layout and component sizes ---- */
+
+  --spacing-sidebar: 14rem;
+  --spacing-header: 4.75rem;
+  --spacing-bottom-nav: 4.875rem;
+
+  --spacing-control: 2.75rem;
+  --spacing-field: 2.875rem;
+  --spacing-chip: 2.375rem;
+  --spacing-badge: 1.5625rem;
+
+  --spacing-table-head: 2.8125rem;
+  --spacing-table-row: 4.75rem;
+
+  --container-content: 72rem;
 }
 
+/* Tokens referencing other variables */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans:
+    var(--font-inter),
+    "Inter",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+
+  --spacing-gutter: var(--gutter);
 }
 
-@media (prefers-color-scheme: dark) {
+/* --------------------------------------------------------------------------
+   2. Root variables
+   -------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+
+  --gutter: 1.25rem; /* 20px mobile */
+  --card-gap: 1.5rem; /* 24px */
+}
+
+/* Desktop gutter */
+@media (min-width: 64rem) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --gutter: 2rem; /* 32px desktop */
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* --------------------------------------------------------------------------
+   3. Global base styles
+   -------------------------------------------------------------------------- */
+
+@layer base {
+  /* Consistent box sizing */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    min-height: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    background-color: var(--color-page);
+  }
+
+  body {
+    min-height: 100vh;
+    margin: 0;
+
+    background-color: var(--color-page);
+    color: var(--color-ink);
+
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Default border colour */
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-line);
+  }
+
+  /* Links */
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* Form controls */
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  /* Placeholder text */
+  ::placeholder {
+    color: var(--color-muted);
+    opacity: 1;
+  }
+
+  /* Selected text */
+  ::selection {
+    background-color: var(--color-primary-soft);
+    color: var(--color-ink);
+  }
+
+  /* Keyboard focus */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /* Form validation errors */
+  input[aria-invalid="true"],
+  select[aria-invalid="true"],
+  textarea[aria-invalid="true"] {
+    border-color: var(--color-danger);
+  }
+
+  input[aria-invalid="true"]:focus-visible,
+  select[aria-invalid="true"]:focus-visible,
+  textarea[aria-invalid="true"]:focus-visible {
+    outline-color: var(--color-danger);
+  }
+
+  /* Tables */
+  table {
+    border-collapse: collapse;
+    border-spacing: 0;
+  }
+
+  /* Reduced motion accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* --------------------------------------------------------------------------
+   4. Small shared utilities
+   -------------------------------------------------------------------------- */
+
+/* Safe area for mobile bottom navigation */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
 }
