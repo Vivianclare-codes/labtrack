@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useMemo, useState } from "react";
@@ -302,12 +303,21 @@ export default function ProcessingQueue() {
                   </td>
 
                   <td className="whitespace-nowrap px-4 py-4 text-right">
-                    <Link
-                      href={`/samples/${item.id}`}
-                      className="text-xs font-semibold text-primary hover:underline"
-                    >
-                      View sample
-                    </Link>
+                    <div className="flex flex-col items-end gap-2">
+                      <Link
+                        href={`/test-processing/${item.id}`}
+                        className="text-xs font-semibold text-primary hover:underline"
+                      >
+                        Process test
+                      </Link>
+
+                      <Link
+                        href={`/samples/${item.id}`}
+                        className="text-xs text-muted hover:text-primary"
+                      >
+                        View sample
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -374,10 +384,17 @@ export default function ProcessingQueue() {
               </div>
             </div>
 
-            <div className="mt-4 border-t border-border pt-3">
+            <div className="mt-4 flex flex-wrap gap-4 border-t border-border pt-3">
+              <Link
+                href={`/test-processing/${item.id}`}
+                className="text-sm font-semibold text-primary hover:underline"
+              >
+                Process test
+              </Link>
+
               <Link
                 href={`/samples/${item.id}`}
-                className="text-sm font-semibold text-primary hover:underline"
+                className="text-sm font-medium text-muted hover:text-primary"
               >
                 View sample details
               </Link>
