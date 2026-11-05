@@ -3,17 +3,21 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
+import { apiRequest, ApiRequestError } from "@/app/lib/api";
+
 interface PatientForm {
   firstName: string;
   lastName: string;
   dateOfBirth: string;
   gender: string;
+  hospitalNumber: string;
   phone: string;
   email: string;
   patientType: string;
   clinic: string;
   referringClinician: string;
   clinicalNotes: string;
+  identityVerified: string;
 }
 
 const initialForm: PatientForm = {
@@ -21,13 +25,20 @@ const initialForm: PatientForm = {
   lastName: "",
   dateOfBirth: "",
   gender: "",
+  hospitalNumber: "",
   phone: "",
   email: "",
   patientType: "Outpatient",
   clinic: "",
   referringClinician: "",
   clinicalNotes: "",
+  identityVerified: "",
 };
+
+interface PatientRegistrationResponse {
+  patient_id: string;
+  registration_date: string;
+}
 
 function FormField({
   label,
@@ -55,8 +66,13 @@ const inputClass =
 export default function PatientRegistration() {
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState<string[]>([]);
+  const [errorTitle, setErrorTitle] = useState(
+    "Please complete the required fields.",
+  );
   const [submitted, setSubmitted] = useState(false);
   const [hospitalNumber, setHospitalNumber] = useState("");
+  const [patientId, setPatientId] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   function updateField(
     field: keyof PatientForm,
@@ -69,10 +85,12 @@ export default function PatientRegistration() {
 
     setSubmitted(false);
     setErrors([]);
+    setErrorTitle("Please complete the required fields.");
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSubmitting) return;
 
     const requiredFields: {
       key: keyof PatientForm;
@@ -81,10 +99,12 @@ export default function PatientRegistration() {
       { key: "firstName", label: "First name" },
       { key: "lastName", label: "Last name" },
       { key: "dateOfBirth", label: "Date of birth" },
-      { key: "gender", label: "Gender" },
-      { key: "phone", label: "Phone number" },
+      { key: "gender", label: "Sex at birth" },
+      { key: "hospitalNumber", label: "Hospital number" },
       { key: "patientType", label: "Patient type" },
       { key: "clinic", label: "Clinic or ward" },
+      { key: "referringClinician", label: "Referring clinician" },
+      { key: "identityVerified", label: "Identity verification status" },
     ];
 
     const missing = requiredFields
@@ -92,18 +112,65 @@ export default function PatientRegistration() {
       .map(({ label }) => label);
 
     if (missing.length > 0) {
+      setErrorTitle("Please complete the required fields.");
       setErrors(missing);
       setSubmitted(false);
       return;
     }
 
-    const demoNumber = `PT-${String(
-      Math.floor(Math.random() * 900000) + 100000
-    )}`;
-
-    setHospitalNumber(demoNumber);
     setErrors([]);
-    setSubmitted(true);
+    setIsSubmitting(true);
+
+    const patientData = {
+      first_name: form.firstName.trim(),
+      last_name: form.lastName.trim(),
+      date_of_birth: form.dateOfBirth,
+      sex_at_birth: form.gender,
+      hospital_number: form.hospitalNumber.trim(),
+      patient_type: form.patientType,
+      clinic_or_ward: form.clinic,
+      referring_clinician: form.referringClinician.trim(),
+      identity_verified: form.identityVerified === "true",
+      ...(form.phone.trim() && { phone_number: form.phone.trim() }),
+      ...(form.email.trim() && { email_address: form.email.trim() }),
+      ...(form.clinicalNotes.trim() && {
+        clinical_notes: form.clinicalNotes.trim(),
+      }),
+    };
+
+    try {
+      const response: PatientRegistrationResponse = await apiRequest(
+        "/patients/",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patientData),
+        },
+      );
+
+      setHospitalNumber(form.hospitalNumber.trim());
+      setPatientId(response.patient_id);
+      setSubmitted(true);
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 409) {
+        setErrorTitle("This hospital number is already registered.");
+        setErrors([
+          "Enter a unique hospital number and submit the form again.",
+        ]);
+      } else if (error instanceof ApiRequestError && error.status === 422) {
+        setErrorTitle("The backend could not validate these patient details.");
+        setErrors([error.message]);
+      } else {
+        setErrorTitle("Patient registration failed.");
+        setErrors([
+          error instanceof Error
+            ? error.message
+            : "Unable to register this patient. Please try again.",
+        ]);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -160,15 +227,18 @@ export default function PatientRegistration() {
             </h2>
 
             <p className="mt-2 text-body text-muted">
-              A demo patient record has been created.
+              The patient record was saved to the hospital registry.
             </p>
 
             <div className="mt-6 rounded-control bg-primary-soft px-5 py-4">
               <p className="text-caption text-muted">
-                Hospital number
+                Patient ID
               </p>
               <p className="mt-1 text-lg font-semibold tracking-wide text-primary">
-                {hospitalNumber}
+                {patientId}
+              </p>
+              <p className="mt-3 text-caption text-muted">
+                Hospital number: {hospitalNumber}
               </p>
             </div>
 
@@ -186,6 +256,9 @@ export default function PatientRegistration() {
                   setForm(initialForm);
                   setSubmitted(false);
                   setHospitalNumber("");
+                  setPatientId("");
+                  setErrors([]);
+                  setErrorTitle("Please complete the required fields.");
                 }}
                 className="h-control rounded-control border border-line px-5 text-label font-medium text-ink hover:bg-page"
               >
@@ -195,7 +268,11 @@ export default function PatientRegistration() {
           </div>
         </section>
       ) : (
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-5"
+          aria-busy={isSubmitting}
+        >
           {/* Validation message */}
           {errors.length > 0 && (
             <div
@@ -203,7 +280,7 @@ export default function PatientRegistration() {
               className="rounded-control border border-danger/30 bg-danger-soft px-4 py-3"
             >
               <p className="text-label font-semibold text-danger">
-                Please complete the required fields.
+                {errorTitle}
               </p>
               <p className="mt-1 text-caption text-danger">
                 {errors.join(", ")}
@@ -221,7 +298,7 @@ export default function PatientRegistration() {
                     Personal information
                   </h2>
                   <p className="mt-1 text-caption text-muted">
-                    Enter the patient's basic personal details.
+                    Enter the patient&apos;s basic personal details.
                   </p>
                 </div>
 
@@ -259,7 +336,7 @@ export default function PatientRegistration() {
                     />
                   </FormField>
 
-                  <FormField label="Gender" required>
+                  <FormField label="Sex at birth" required>
                     <select
                       value={form.gender}
                       onChange={(e) =>
@@ -267,7 +344,7 @@ export default function PatientRegistration() {
                       }
                       className={inputClass}
                     >
-                      <option value="">Select gender</option>
+                      <option value="">                      Select sex at birth</option>
                       <option value="Female">Female</option>
                       <option value="Male">Male</option>
                     </select>
@@ -287,7 +364,7 @@ export default function PatientRegistration() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                  <FormField label="Phone number" required>
+                  <FormField label="Phone number">
                     <input
                       type="tel"
                       value={form.phone}
@@ -320,11 +397,22 @@ export default function PatientRegistration() {
                     Hospital information
                   </h2>
                   <p className="mt-1 text-caption text-muted">
-                    Record the patient's hospital and clinical details.
+                    Record the patient&apos;s hospital and clinical details.
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <FormField label="Hospital number" required>
+                    <input
+                      value={form.hospitalNumber}
+                      onChange={(e) =>
+                        updateField("hospitalNumber", e.target.value)
+                      }
+                      placeholder="Enter the hospital-assigned number"
+                      className={inputClass}
+                    />
+                  </FormField>
+
                   <FormField label="Patient type" required>
                     <select
                       value={form.patientType}
@@ -362,7 +450,7 @@ export default function PatientRegistration() {
                   </FormField>
 
                   <div className="sm:col-span-2">
-                    <FormField label="Referring clinician">
+                    <FormField label="Referring clinician" required>
                       <input
                         value={form.referringClinician}
                         onChange={(e) =>
@@ -371,9 +459,25 @@ export default function PatientRegistration() {
                             e.target.value
                           )
                         }
-                        placeholder="Enter clinician's name"
+                        placeholder="Enter clinician&apos;s name"
                         className={inputClass}
                       />
+                    </FormField>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <FormField label="Identity verification" required>
+                      <select
+                        value={form.identityVerified}
+                        onChange={(e) =>
+                          updateField("identityVerified", e.target.value)
+                        }
+                        className={inputClass}
+                      >
+                        <option value="">Select verification status</option>
+                        <option value="true">Verified</option>
+                        <option value="false">Not verified</option>
+                      </select>
                     </FormField>
                   </div>
 
@@ -407,7 +511,7 @@ export default function PatientRegistration() {
                       Hospital number
                     </p>
                     <p className="mt-1 text-body font-medium text-ink">
-                      Generated on registration
+                      {form.hospitalNumber || "Not provided"}
                     </p>
                   </div>
 
@@ -448,7 +552,7 @@ export default function PatientRegistration() {
                 </h2>
 
                 <ul className="mt-3 space-y-2 text-caption leading-relaxed text-muted">
-                  <li>• Confirm the patient's name and date of birth.</li>
+                  <li>• Confirm the patient&apos;s name and date of birth.</li>
                   <li>• Check that the contact number is correct.</li>
                   <li>• Select the correct patient type and clinic.</li>
                   <li>• Avoid entering unnecessary sensitive information in clinical notes.</li>
@@ -468,9 +572,10 @@ export default function PatientRegistration() {
 
             <button
               type="submit"
-              className="h-control rounded-control bg-primary px-6 text-label font-medium text-white transition-colors hover:bg-primary/90"
+              disabled={isSubmitting}
+              className="h-control rounded-control bg-primary px-6 text-label font-medium text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Register patient
+              {isSubmitting ? "Registering patient..." : "Register patient"}
             </button>
           </div>
         </form>

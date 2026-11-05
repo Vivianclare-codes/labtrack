@@ -4,30 +4,12 @@ interface PatientTableProps {
   patients: Patient[];
 }
 
-function PatientStatusBadge({
-  status,
-}: {
-  status: Patient["status"];
-}) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-badge px-2.5 py-1 text-caption font-medium ${
-        status === "Active"
-          ? "bg-primary-soft text-primary"
-          : "bg-surface-muted text-muted"
-      }`}
-    >
-      {status}
-    </span>
-  );
-}
-
 function PatientTypeBadge({
   type,
 }: {
   type: Patient["patientType"];
 }) {
-  const styles = {
+  const styles: Record<string, string> = {
     Outpatient: "bg-info-soft text-info",
     Inpatient: "bg-primary-soft text-primary",
     Emergency: "bg-warning-soft text-warning",
@@ -35,7 +17,9 @@ function PatientTypeBadge({
 
   return (
     <span
-      className={`inline-flex rounded-badge px-2.5 py-1 text-caption font-medium ${styles[type]}`}
+      className={`inline-flex rounded-badge px-2.5 py-1 text-caption font-medium ${
+        styles[type] ?? "bg-surface-muted text-muted"
+      }`}
     >
       {type}
     </span>
@@ -54,11 +38,10 @@ export default function PatientTable({
             <tr className="h-table-head text-caption font-medium text-muted">
               <th className="px-5">Hospital number</th>
               <th className="px-4">Patient name</th>
-              <th className="px-4">Age / Gender</th>
+              <th className="px-4">Date of birth / Sex</th>
               <th className="px-4">Patient type</th>
               <th className="px-4">Clinic / Ward</th>
               <th className="px-4">Registered</th>
-              <th className="px-4">Status</th>
             </tr>
           </thead>
 
@@ -77,7 +60,7 @@ export default function PatientTable({
                 </td>
 
                 <td className="whitespace-nowrap px-4 text-muted">
-                  {patient.age} / {patient.gender}
+                  {patient.dateOfBirth} / {patient.sexAtBirth}
                 </td>
 
                 <td className="whitespace-nowrap px-4">
@@ -85,15 +68,11 @@ export default function PatientTable({
                 </td>
 
                 <td className="whitespace-nowrap px-4 text-muted">
-                  {patient.clinic}
+                  {patient.clinicOrWard}
                 </td>
 
                 <td className="whitespace-nowrap px-4 text-muted">
-                  {patient.registeredAt}
-                </td>
-
-                <td className="whitespace-nowrap px-4">
-                  <PatientStatusBadge status={patient.status} />
+                  {patient.registrationDate}
                 </td>
               </tr>
             ))}
@@ -105,7 +84,7 @@ export default function PatientTable({
       <div className="divide-y divide-line lg:hidden">
         {patients.map((patient) => (
           <article key={patient.id} className="space-y-3 px-4 py-4">
-            <div className="flex items-start justify-between gap-3">
+            <div>
               <div>
                 <p className="font-medium text-ink">
                   {patient.firstName} {patient.lastName}
@@ -116,14 +95,13 @@ export default function PatientTable({
                 </p>
               </div>
 
-              <PatientStatusBadge status={patient.status} />
             </div>
 
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-caption">
               <div>
-                <p className="text-muted">Age / Gender</p>
+                <p className="text-muted">Date of birth / Sex</p>
                 <p className="mt-1 text-ink">
-                  {patient.age} / {patient.gender}
+                  {patient.dateOfBirth} / {patient.sexAtBirth}
                 </p>
               </div>
 
@@ -136,13 +114,13 @@ export default function PatientTable({
 
               <div>
                 <p className="text-muted">Clinic / Ward</p>
-                <p className="mt-1 text-ink">{patient.clinic}</p>
+                <p className="mt-1 text-ink">{patient.clinicOrWard}</p>
               </div>
 
               <div>
                 <p className="text-muted">Registered</p>
                 <p className="mt-1 text-ink">
-                  {patient.registeredAt}
+                  {patient.registrationDate}
                 </p>
               </div>
             </div>

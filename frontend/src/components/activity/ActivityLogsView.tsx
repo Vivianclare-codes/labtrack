@@ -138,8 +138,8 @@ export default function ActivityLogsView() {
       <div className="rounded-lg border border-border bg-muted-surface px-4 py-3">
         <p className="text-xs text-muted">
           <span className="font-semibold text-foreground">Demo activity:</span>{" "}
-          These records are illustrative. Live activity tracking will be
-          connected to the backend later.
+          These records are illustrative only. The backend currently has no
+          activity-log endpoint, so this page does not load live activity data.
         </p>
       </div>
 

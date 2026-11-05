@@ -1,15 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import PatientTable from "./PatientTable";
 
-import {
-  patients,
-  type Patient,
-  type PatientType,
-} from "@/app/lib/patient-data";
+import { apiRequestAll } from "@/app/lib/api";
+import type { Patient, PatientType } from "@/app/lib/patient-data";
 
 type FilterType = "All" | PatientType;
 
@@ -21,6 +18,28 @@ const FILTERS: FilterType[] = [
 ];
 
 const PAGE_SIZE = 8;
+
+interface ApiPatient {
+  id: number;
+  patient_id: string;
+  first_name: string;
+  last_name: string;
+  hospital_number: string;
+  date_of_birth: string;
+  sex_at_birth: string;
+  phone_number: string | null;
+  patient_type: string;
+  clinic_or_ward: string;
+  registration_date: string;
+}
+
+function formatPatientDate(value: string) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
 
 function SearchIcon() {
   return (
@@ -70,8 +89,45 @@ function PlusIcon() {
 export default function PatientRegistry() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("All");
-  const [status, setStatus] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+
+  useEffect(() => {
+    async function loadPatients() {
+      try {
+        setLoading(true);
+        setFetchError("");
+        const patientData = await apiRequestAll<ApiPatient>("/patients/");
+        setPatients(
+          patientData.map((patient) => ({
+            id: patient.id,
+            patientId: patient.patient_id,
+            firstName: patient.first_name,
+            lastName: patient.last_name,
+            hospitalNumber: patient.hospital_number,
+            dateOfBirth: formatPatientDate(patient.date_of_birth),
+            sexAtBirth: patient.sex_at_birth,
+            phoneNumber: patient.phone_number,
+            patientType: patient.patient_type,
+            clinicOrWard: patient.clinic_or_ward,
+            registrationDate: formatPatientDate(patient.registration_date),
+          })),
+        );
+        setCurrentPage(1);
+      } catch (error) {
+        setFetchError(
+          error instanceof Error ? error.message : "Unable to load patients.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadPatients();
+  }, [loadAttempt]);
 
   const filteredPatients = useMemo(() => {
     return patients.filter((patient) => {
@@ -79,20 +135,18 @@ export default function PatientRegistry() {
 
       const matchesSearch = [
         patient.hospitalNumber,
+        patient.patientId,
         patient.firstName,
         patient.lastName,
-        patient.phone,
+        patient.phoneNumber ?? "",
       ].some((value) => value.toLowerCase().includes(searchTerm));
 
       const matchesType =
         filter === "All" || patient.patientType === filter;
 
-      const matchesStatus =
-        status === "All" || patient.status === status;
-
-      return matchesSearch && matchesType && matchesStatus;
+      return matchesSearch && matchesType;
     });
-  }, [search, filter, status]);
+  }, [patients, search, filter]);
 
   const totalPages = Math.max(
     1,
@@ -115,11 +169,6 @@ export default function PatientRegistry() {
 
   function updateFilter(value: FilterType) {
     setFilter(value);
-    setCurrentPage(1);
-  }
-
-  function updateStatus(value: string) {
-    setStatus(value);
     setCurrentPage(1);
   }
 
@@ -173,19 +222,6 @@ export default function PatientRegistry() {
               />
             </label>
 
-            <label className="flex items-center gap-2">
-              <span className="sr-only">Filter by patient status</span>
-
-              <select
-                value={status}
-                onChange={(event) => updateStatus(event.target.value)}
-                className="h-field w-full rounded-control border border-line bg-surface px-3 text-body outline-none focus:border-primary sm:w-36"
-              >
-                <option value="All">All statuses</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-            </label>
           </div>
 
           <div className="flex gap-2 overflow-x-auto pb-1">
@@ -216,28 +252,47 @@ export default function PatientRegistry() {
             patients found
           </p>
 
-          <p className="text-caption text-muted">
-            Updated just now
-          </p>
+          <p className="text-caption text-muted">Live backend records</p>
         </div>
 
         {/* Patient records */}
-        {visiblePatients.length > 0 ? (
+        {loading ? (
+          <div role="status" className="px-5 py-16 text-center text-body text-muted">
+            Loading patients...
+          </div>
+        ) : fetchError ? (
+          <div className="px-5 py-12 text-center">
+            <p role="alert" className="text-body font-medium text-danger">
+              {fetchError}
+            </p>
+            <button
+              type="button"
+              onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+              className="mt-3 text-caption font-medium text-primary hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        ) : visiblePatients.length > 0 ? (
           <PatientTable patients={visiblePatients} />
         ) : (
           <div className="px-5 py-16 text-center">
             <p className="text-body font-medium text-ink">
-              No patients found
+              {patients.length === 0
+                ? "No patients are registered."
+                : "No patients found"}
             </p>
 
-            <p className="mt-1 text-caption text-muted">
-              Try changing your search or filters.
-            </p>
+            {patients.length > 0 && (
+              <p className="mt-1 text-caption text-muted">
+                Try changing your search or filters.
+              </p>
+            )}
           </div>
         )}
 
         {/* Pagination */}
-        {filteredPatients.length > 0 && (
+        {!loading && !fetchError && filteredPatients.length > 0 && (
           <div className="flex flex-col gap-3 border-t border-line px-4 py-4 sm:flex-row sm:items-center sm:justify-between lg:px-5">
             <p className="text-caption text-muted">
               Showing {startIndex + 1}–
