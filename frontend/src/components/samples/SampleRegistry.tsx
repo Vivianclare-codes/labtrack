@@ -1,13 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import SampleTable from "./SampleTable";
 
-import {
-  samples,
-  type SampleRecord,
-} from "@/app/lib/sample-data";
+import { samples, type SampleRecord } from "@/app/lib/sample-data";
+import { apiRequest } from "@/app/lib/api";
 
 type SampleFilter =
   | "All"
@@ -32,6 +30,47 @@ const MOBILE_FILTERS: SampleFilter[] = [
 ];
 
 const PAGE_SIZE = 8;
+
+interface ApiSample {
+  id: number;
+  sample_id: string;
+  patient_id: number;
+  sample_type: string;
+  collection_datetime: string;
+  received_datetime: string;
+  sample_condition: string;
+  receiving_staff: string;
+  status: string;
+}
+
+interface ApiPatient {
+  id: number;
+  patient_id: string;
+  first_name: string;
+  last_name: string;
+  hospital_number: string;
+}
+
+interface ApiDepartment {
+  id: number;
+  name: string;
+  code: string;
+}
+
+interface ApiTest {
+  id: number;
+  name: string;
+  code: string;
+  department_id: number;
+}
+
+interface ApiTestRequest {
+  id: number;
+  sample_id: number;
+  test_id: number | null;
+  department_id: number;
+  status: string;
+}
 
 function SearchIcon() {
   return (
@@ -92,9 +131,124 @@ export default function SampleRegistry() {
   const [filter, setFilter] = useState<SampleFilter>("All");
   const [department, setDepartment] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
+  const [sampleRecords, setSampleRecords] = useState<SampleRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
+
+  useEffect(() => {
+  async function loadSamples() {
+    try {
+      setLoading(true);
+      setFetchError("");
+
+      const [
+        sampleData,
+        patientData,
+        departmentData,
+        testData,
+        requestData,
+      ] = await Promise.all([
+        apiRequest("/samples/"),
+        apiRequest("/patients/"),
+        apiRequest("/departments/"),
+        apiRequest("/tests/"),
+        apiRequest("/test-requests/"),
+      ]);
+
+      const formattedSamples: SampleRecord[] = sampleData.map(
+  (sample: ApiSample) => {
+    const patient = patientData.find(
+      (item: ApiPatient) => item.id === sample.patient_id
+    );
+
+    const sampleRequests = requestData.filter(
+      (item: ApiTestRequest) => item.sample_id === sample.id
+    );
+
+    const requestedTests = sampleRequests
+      .map((request: ApiTestRequest) =>
+        testData.find(
+          (test: ApiTest) => test.id === request.test_id
+        )
+      )
+      .filter((test: ApiTest | undefined) => test !== undefined);
+
+    const requestedDepartments = sampleRequests
+      .map((request: ApiTestRequest) =>
+        departmentData.find(
+          (item: ApiDepartment) =>
+            item.id === request.department_id
+        )
+      )
+      .filter(
+        (item: ApiDepartment | undefined) => item !== undefined
+      );
+
+    const receivedDate = new Date(sample.received_datetime);
+
+    const hasCompletedRequest = sampleRequests.some(
+      (request: ApiTestRequest) => request.status === "Completed"
+    );
+
+    const hasProcessingRequest = sampleRequests.some(
+      (request: ApiTestRequest) =>
+        request.status === "Processing" ||
+        request.status === "Awaiting Review"
+    );
+
+    const displayStatus =
+      sample.status === "On Hold" || sample.status === "Cancelled"
+        ? "Pending"
+        : hasCompletedRequest
+          ? "Completed"
+          : hasProcessingRequest
+            ? "Processing"
+            : "Received";
+
+    return {
+      id: String(sample.id),
+      sampleNumber: sample.sample_id,
+      patientName: patient
+        ? `${patient.first_name} ${patient.last_name}`
+        : "Unknown patient",
+      hospitalNumber: patient?.hospital_number ?? "N/A",
+      test: requestedTests.map((test: { name: any; }) => test.name).join(", ") || "Not assigned",
+      department:
+        [...new Set(requestedDepartments.map((item: { name: any; }) => item.name))].join(", ") ||
+        "Not assigned",
+      receivedAt: receivedDate.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }),
+      receivedTime: receivedDate.toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      }),
+      status: displayStatus,
+      priority: "Routine",
+    };
+  }
+);
+
+setSampleRecords(formattedSamples);
+    } catch (error) {
+      setFetchError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load samples."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  loadSamples();
+}, []);
 
   const filteredSamples = useMemo(() => {
-    return samples.filter((sample) => {
+    return sampleRecords.filter((sample: SampleRecord) => {
       const searchTerm = search.toLowerCase();
 
       const matchesSearch = [
@@ -117,7 +271,7 @@ export default function SampleRegistry() {
         matchesFilter(sample, filter)
       );
     });
-  }, [search, filter, department]);
+  }, [sampleRecords, search, filter, department]);
 
   const totalPages = Math.max(
     1,
@@ -146,6 +300,22 @@ export default function SampleRegistry() {
     setDepartment(value);
     setCurrentPage(1);
   }
+
+  if (loading) {
+  return (
+    <div className="flex min-h-[300px] items-center justify-center text-sm text-muted">
+      Loading samples...
+    </div>
+  );
+}
+
+if (fetchError) {
+  return (
+    <div className="rounded-lg border border-danger/20 bg-danger-soft p-5 text-sm text-danger">
+      {fetchError}
+    </div>
+  );
+}
 
   return (
     <div className="space-y-6">

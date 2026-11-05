@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.patients.routes import router as patient_router
 from app.database import create_tables
 from app.patients.models import Patient
@@ -14,6 +15,13 @@ from app.results.models import Result
 from app.results.routes import router as result_router
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 create_tables()
 
 app.include_router(patient_router, prefix="/patients")

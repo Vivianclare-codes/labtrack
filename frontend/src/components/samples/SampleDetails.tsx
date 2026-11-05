@@ -1,9 +1,50 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import type { SampleRecord } from "@/app/lib/sample-data";
+import { apiRequest } from "@/app/lib/api";
 import SampleJourney from "@/components/samples/SampleJourney";
 
 interface SampleDetailsProps {
-  sample: SampleRecord;
+  sampleId: string;
+}
+
+interface ApiSample {
+  id: number;
+  sample_id: string;
+  patient_id: number;
+  sample_type: string;
+  collection_datetime: string;
+  received_datetime: string;
+  sample_condition: string;
+  receiving_staff: string;
+  status: string;
+}
+
+interface ApiPatient {
+  id: number;
+  first_name: string;
+  last_name: string;
+  hospital_number: string;
+}
+
+interface ApiDepartment {
+  id: number;
+  name: string;
+}
+
+interface ApiTest {
+  id: number;
+  name: string;
+}
+
+interface ApiTestRequest {
+  id: number;
+  sample_id: number;
+  test_id: number | null;
+  department_id: number;
+  status: string;
 }
 
 function StatusBadge({ status }: { status: SampleRecord["status"] }) {
@@ -56,7 +97,149 @@ function DetailItem({
   );
 }
 
-export default function SampleDetails({ sample }: SampleDetailsProps) {
+export default function SampleDetails({ sampleId }: SampleDetailsProps) {
+  const [sample, setSample] = useState<SampleRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function fetchSample() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const response: ApiSample = await apiRequest(
+          `/samples/${sampleId}`
+        );
+
+       const [
+  patientData,
+  requestData,
+] = await Promise.all([
+  apiRequest("/patients/"),
+  apiRequest("/test-requests/"),
+]);
+
+const patient = (patientData as ApiPatient[]).find(
+  (item) => item.id === response.patient_id
+);
+
+if (!patient) {
+  throw new Error("Patient linked to this sample was not found.");
+}
+
+const requests = requestData as ApiTestRequest[];
+
+        const sampleRequests = requests.filter(
+          (request) => request.sample_id === response.id
+        );
+
+        const testData: ApiTest[] = await apiRequest("/tests/");
+        const departmentData: ApiDepartment[] =
+          await apiRequest("/departments/");
+
+        const requestedTests = sampleRequests
+          .map((request) =>
+            testData.find((test) => test.id === request.test_id)
+          )
+          .filter((test) => test !== undefined);
+
+        const requestedDepartments = sampleRequests
+          .map((request) =>
+            departmentData.find(
+              (department) =>
+                department.id === request.department_id
+            )
+          )
+          .filter((department) => department !== undefined);
+
+        const hasCompletedRequest = sampleRequests.some(
+          (request) => request.status === "Completed"
+        );
+
+        const hasProcessingRequest = sampleRequests.some(
+          (request) =>
+            request.status === "Processing" ||
+            request.status === "Awaiting Review"
+        );
+
+        const displayStatus =
+          response.status === "On Hold" ||
+          response.status === "Cancelled"
+            ? "Pending"
+            : hasCompletedRequest
+              ? "Completed"
+              : hasProcessingRequest
+                ? "Processing"
+                : "Received";
+
+        const receivedDate = new Date(response.received_datetime);
+
+        const sampleData: SampleRecord = {
+          id: String(response.id),
+          sampleNumber: response.sample_id,
+          patientName: `${patient.first_name} ${patient.last_name}`,
+          hospitalNumber: patient.hospital_number,
+          test:
+            requestedTests.map((test) => test.name).join(", ") ||
+            "Not assigned",
+          department:
+            [...new Set(
+              requestedDepartments.map((department) => department.name)
+            )].join(", ") || "Not assigned",
+          status: displayStatus,
+          priority: "Routine",
+          receivedAt: receivedDate.toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          }),
+          receivedTime: receivedDate.toLocaleTimeString("en-GB", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+          }),
+        };
+
+        setSample(sampleData);
+      } catch (err) {
+  console.error("Sample details error:", err);
+
+  setError(
+    err instanceof Error
+      ? err.message
+      : "Failed to fetch sample details."
+  );
+} finally {
+        setLoading(false);
+      }
+    }
+
+    fetchSample();
+  }, [sampleId]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[300px] items-center justify-center text-sm text-muted">
+        Loading sample details...
+      </div>
+    );
+  }
+
+  if (error || !sample) {
+    return (
+      <div className="rounded-lg border border-danger/20 bg-danger-soft p-5 text-sm text-danger">
+        {error || "Sample not found."}
+        <Link
+          href="/samples"
+          className="ml-2 font-medium underline"
+        >
+          Return to sample registry
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Breadcrumb */}
@@ -175,7 +358,7 @@ export default function SampleDetails({ sample }: SampleDetailsProps) {
           />
           <DetailItem
             label="Collected by"
-            value="Not recorded in demo data"
+            value="Not recorded"
           />
         </section>
 

@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+
+import { apiRequest } from "@/app/lib/api";
 
 interface SampleForm {
   patientId: string;
@@ -13,6 +20,32 @@ interface SampleForm {
   collectionTime: string;
   collectedBy: string;
   notes: string;
+}
+
+interface Department {
+  id: number;
+  name: string;
+  code: string;
+  description: string | null;
+  is_active: boolean;
+}
+
+interface Test {
+  id: number;
+  name: string;
+  code: string;
+  description: string | null;
+  department_id: number;
+  sample_type: string;
+  is_active: boolean;
+}
+
+interface Patient {
+  id: number;
+  patient_id: string;
+  first_name: string;
+  last_name: string;
+  hospital_number: string;
 }
 
 const initialForm: SampleForm = {
@@ -27,56 +60,7 @@ const initialForm: SampleForm = {
   notes: "",
 };
 
-const PATIENT_OPTIONS = [
-  { id: "PT-000241", name: "Grace Okafor" },
-  { id: "PT-000240", name: "David Williams" },
-  { id: "PT-000239", name: "Amara Nwosu" },
-  { id: "PT-000238", name: "Michael Brown" },
-  { id: "PT-000237", name: "Chiamaka Eze" },
-  { id: "PT-000236", name: "Samuel Johnson" },
-  { id: "PT-000235", name: "Ngozi Adams" },
-  { id: "PT-000234", name: "Peter Clarke" },
-];
 
-const DEPARTMENT_TESTS: Record<string, string[]> = {
-  Haematology: [
-    "Full Blood Count",
-    "Blood Group",
-    "ESR",
-    "Packed Cell Volume",
-    "Genotype",
-    "Clotting Profile",
-  ],
-  Microbiology: [
-    "Malaria Parasite",
-    "Urine Culture",
-    "Blood Culture",
-    "Stool Culture",
-    "High Vaginal Swab",
-    "Sputum Culture",
-  ],
-  "Chemical Pathology": [
-    "Liver Function Test",
-    "Kidney Function Test",
-    "Electrolytes",
-    "Fasting Blood Sugar",
-    "Lipid Profile",
-    "Urea and Creatinine",
-  ],
-  Histopathology: [
-    "Histology",
-    "Cytology",
-    "Biopsy Examination",
-  ],
-  "Serology/Immunology": [
-    "HIV Screening",
-    "Hepatitis B Screening",
-    "Hepatitis C Screening",
-    "Widal Test",
-    "CRP",
-    "Rheumatoid Factor",
-  ],
-};
 
 const SAMPLE_TYPES = [
   "Blood",
@@ -111,18 +95,6 @@ function FormField({
 const inputClass =
   "h-field w-full rounded-control border border-line bg-surface px-3 text-body text-ink outline-none transition-colors focus:border-primary";
 
-function generateSampleNumber() {
-  const now = new Date();
-
-  const year = String(now.getFullYear()).slice(-2);
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  const sequence = String(
-    Math.floor(Math.random() * 9000) + 1000
-  );
-
-  return `LB-${year}${month}${day}-${sequence}`;
-}
 
 export default function SampleRegistration() {
   const [form, setForm] = useState(initialForm);
@@ -130,13 +102,52 @@ export default function SampleRegistration() {
   const [submitted, setSubmitted] = useState(false);
   const [sampleNumber, setSampleNumber] = useState("");
 
-  const selectedPatient = PATIENT_OPTIONS.find(
-    (patient) => patient.id === form.patientId
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [tests, setTests] = useState<Test[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(true);
+  const [fetchError, setFetchError] = useState("");
+
+  useEffect(() => {
+  async function loadOptions() {
+    try {
+      const [departmentData, testData, patientData] = await Promise.all([
+        apiRequest("/departments/"),
+        apiRequest("/tests/"),
+        apiRequest("/patients/"),
+      ]);
+
+      setDepartments(departmentData);
+      setTests(testData);
+      setPatients(patientData);
+    } catch (error) {
+      console.error("Failed to load form options:", error);
+      setFetchError("Could not load patients, departments and tests.");
+    } finally {
+      setLoadingOptions(false);
+    }
+  }
+
+  loadOptions();
+}, []);
+
+  const selectedPatient = patients.find(
+    (patient) => String(patient.id) === form.patientId
   );
 
-  const availableTests = form.department
-    ? DEPARTMENT_TESTS[form.department] ?? []
-    : [];
+  const selectedDepartment = departments.find(
+    (department) => department.name === form.department
+  );
+
+const availableTests = tests.filter(
+  (test) =>
+    test.department_id === selectedDepartment?.id &&
+    test.is_active
+);
+
+const selectedTest = tests.find(
+  (test) => String(test.id) === form.test
+);
 
   function updateField(field: keyof SampleForm, value: string) {
     setForm((current) => {
@@ -157,36 +168,87 @@ export default function SampleRegistration() {
     setSubmitted(false);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+ async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
 
-    const requiredFields: {
-      key: keyof SampleForm;
-      label: string;
-    }[] = [
-      { key: "patientId", label: "Patient" },
-      { key: "sampleType", label: "Sample type" },
-      { key: "department", label: "Department" },
-      { key: "test", label: "Test requested" },
-      { key: "collectionDate", label: "Collection date" },
-      { key: "collectionTime", label: "Collection time" },
-    ];
+  const requiredFields: {
+    key: keyof SampleForm;
+    label: string;
+  }[] = [
+    { key: "patientId", label: "Patient" },
+    { key: "sampleType", label: "Sample type" },
+    { key: "department", label: "Department" },
+    { key: "test", label: "Test requested" },
+    { key: "collectionDate", label: "Collection date" },
+    { key: "collectionTime", label: "Collection time" },
+  ];
 
-    const missingFields = requiredFields
-      .filter(({ key }) => !form[key].trim())
-      .map(({ label }) => label);
+  const missingFields = requiredFields
+    .filter(({ key }) => !form[key].trim())
+    .map(({ label }) => label);
 
-    if (missingFields.length > 0) {
-      setErrors(missingFields);
-      return;
-    }
-
-    const generatedNumber = generateSampleNumber();
-
-    setSampleNumber(generatedNumber);
-    setErrors([]);
-    setSubmitted(true);
+  if (missingFields.length > 0) {
+    setErrors(missingFields);
+    return;
   }
+
+  try {
+    setErrors([]);
+
+    // Prepare the collection date and time.
+    const collectionDateTime = `${form.collectionDate}T${form.collectionTime}:00`;
+
+    // Get the current local date and time.
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+
+    const receivedDateTime = [
+      `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+      `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+    ].join("T");
+
+    // Step 1: Create the sample.
+    const createdSample = await apiRequest("/samples/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        patient_id: Number(form.patientId),
+        sample_type: form.sampleType,
+        collection_datetime: collectionDateTime,
+        received_datetime: receivedDateTime,
+        sample_condition: "Good",
+        receiving_staff: "Laboratory staff",
+        status: "Registered",
+      }),
+    });
+
+    // Step 2: Create a test request for the new sample.
+    await apiRequest("/test-requests/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sample_id: createdSample.id,
+        test_id: Number(form.test),
+      }),
+    });
+
+    // Step 3: Display the sample number returned by the backend.
+    setSampleNumber(createdSample.sample_id);
+    setSubmitted(true);
+  } catch (error) {
+    console.error("Sample registration failed:", error);
+
+    setErrors([
+      error instanceof Error
+        ? error.message
+        : "Something went wrong while registering the sample.",
+    ]);
+  }
+}
 
   function resetForm() {
     setForm(initialForm);
@@ -250,7 +312,7 @@ export default function SampleRegistration() {
             </h2>
 
             <p className="mt-2 text-body text-muted">
-              The demo sample record has been created.
+              The sample and its test request have been successfully registered.
             </p>
 
             <div className="mt-6 rounded-control bg-primary-soft px-5 py-4">
@@ -266,12 +328,14 @@ export default function SampleRegistration() {
             <div className="mt-5 space-y-2 text-body text-muted">
               <p>
                 <span className="font-medium text-ink">Patient:</span>{" "}
-                {selectedPatient?.name}
+                {selectedPatient
+                  ? `${selectedPatient.first_name} ${selectedPatient.last_name}`
+                  : ""}
               </p>
 
               <p>
                 <span className="font-medium text-ink">Test:</span>{" "}
-                {form.test}
+                {selectedTest?.name}
               </p>
 
               <p>
@@ -341,11 +405,11 @@ export default function SampleRegistration() {
                   >
                     <option value="">Search or select a patient</option>
 
-                    {PATIENT_OPTIONS.map((patient) => (
-                      <option key={patient.id} value={patient.id}>
-                        {patient.name} — {patient.id}
-                      </option>
-                    ))}
+                    {patients.map((patient) => (
+  <option key={patient.id} value={String(patient.id)}>
+    {patient.first_name} {patient.last_name} — {patient.hospital_number}
+  </option>
+))}
                   </select>
                 </FormField>
 
@@ -356,11 +420,13 @@ export default function SampleRegistration() {
                     </p>
 
                     <p className="mt-1 text-body font-medium text-ink">
-                      {selectedPatient.name}
+                     {selectedPatient
+  ? `${selectedPatient.first_name} ${selectedPatient.last_name}`
+  : ""}
                     </p>
 
                     <p className="mt-1 text-caption text-muted">
-                      Hospital number: {selectedPatient.id}
+                      Hospital number: {selectedPatient.hospital_number}
                     </p>
                   </div>
                 )}
@@ -457,11 +523,13 @@ export default function SampleRegistration() {
                     >
                       <option value="">Select department</option>
 
-                      {Object.keys(DEPARTMENT_TESTS).map((department) => (
-                        <option key={department} value={department}>
-                          {department}
-                        </option>
-                      ))}
+                      {departments
+  .filter((department) => department.is_active)
+  .map((department) => (
+    <option key={department.id} value={department.name}>
+      {department.name}
+    </option>
+  ))}
                     </select>
                   </FormField>
 
@@ -481,10 +549,10 @@ export default function SampleRegistration() {
                       </option>
 
                       {availableTests.map((test) => (
-                        <option key={test} value={test}>
-                          {test}
-                        </option>
-                      ))}
+  <option key={test.id} value={String(test.id)}>
+    {test.name}
+  </option>
+))}
                     </select>
                   </FormField>
                 </div>
@@ -553,7 +621,9 @@ export default function SampleRegistration() {
                     </p>
 
                     <p className="mt-1 text-body font-medium text-ink">
-                      {selectedPatient?.name || "Not selected"}
+                      {selectedPatient
+                        ? `${selectedPatient.first_name} ${selectedPatient.last_name}`
+                        : "Not selected"}
                     </p>
                   </div>
 
@@ -583,7 +653,7 @@ export default function SampleRegistration() {
                     </p>
 
                     <p className="mt-1 text-body font-medium text-ink">
-                      {form.test || "Not selected"}
+                      {selectedTest?.name || "Not selected"}
                     </p>
                   </div>
 

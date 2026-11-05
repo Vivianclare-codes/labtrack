@@ -82,7 +82,7 @@ export default function SampleTable({
               >
                 <td className="whitespace-nowrap px-5">
                   <Link
-                    href={`/samples/${sample.id}`}
+                    href={`/samples/${sample.sampleNumber}`}
                     className="font-medium text-primary hover:underline"
                   >
                     {sample.sampleNumber}
@@ -133,7 +133,7 @@ export default function SampleTable({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <Link
-                  href={`/samples/${sample.id}`}
+                  href={`/samples/${sample.sampleNumber}`}
                   className="text-label font-semibold text-primary hover:underline"
                 >
                   {sample.sampleNumber}

@@ -42,6 +42,7 @@ class PatientResponse(BaseModel):
 
 
 class PatientListResponse(PatientCreate):
+    id: int
     patient_id: str
     registration_date: date
 
