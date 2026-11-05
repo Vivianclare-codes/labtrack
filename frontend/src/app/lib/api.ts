@@ -12,3 +12,24 @@ export async function apiRequest(
 
   return response.json();
 }
+
+export async function apiRequestAll<T>(endpoint: string): Promise<T[]> {
+  const separator = endpoint.includes("?") ? "&" : "?";
+  const pageSize = 100;
+  const records: T[] = [];
+  let skip = 0;
+
+  while (true) {
+    const page: T[] = await apiRequest(
+      `${endpoint}${separator}skip=${skip}&limit=${pageSize}`
+    );
+
+    records.push(...page);
+
+    if (page.length < pageSize) {
+      return records;
+    }
+
+    skip += page.length;
+  }
+}

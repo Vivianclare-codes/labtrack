@@ -1,6 +1,4 @@
-import { notFound } from "next/navigation";
 import TestProcessing from "@/components/processing/TestProcessing";
-import { samples } from "@/app/lib/sample-data";
 
 interface TestProcessingPageProps {
   params: Promise<{
@@ -13,11 +11,5 @@ export default async function TestProcessingPage({
 }: TestProcessingPageProps) {
   const { id } = await params;
 
-  const sample = samples.find((item) => item.id === id);
-
-  if (!sample) {
-    notFound();
-  }
-
-  return <TestProcessing sample={sample} />;
+  return <TestProcessing testRequestId={id} />;
 }

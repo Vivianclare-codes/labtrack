@@ -1,12 +1,81 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  initialReviewRecords,
-  type ReviewRecord,
-  type ReviewStatus,
-} from "@/app/lib/review-data";
+import { apiRequest, apiRequestAll } from "@/app/lib/api";
+
+type ReviewStatus =
+  | "Pending Review"
+  | "Approved"
+  | "Rejected"
+  | "Draft"
+  | "Unknown";
+
+interface ApiResult {
+  id: number;
+  result_id: string;
+  test_request_id: number;
+  result_value: string;
+  unit: string | null;
+  reference_range: string | null;
+  interpretation: string | null;
+  comments: string | null;
+  performed_by: string;
+  status: string;
+  created_at: string;
+}
+
+interface ApiTestRequest {
+  id: number;
+  sample_id: number;
+  test_id: number | null;
+  department_id: number;
+  custom_test_name: string | null;
+  status: string;
+}
+
+interface ApiSample {
+  id: number;
+  sample_id: string;
+  patient_id: number;
+  received_datetime: string;
+}
+
+interface ApiPatient {
+  id: number;
+  hospital_number: string;
+  first_name: string;
+  last_name: string;
+}
+
+interface ApiTest {
+  id: number;
+  name: string;
+}
+
+interface ApiDepartment {
+  id: number;
+  name: string;
+}
+
+interface ReviewRecord {
+  id: string;
+  sampleId: string;
+  sampleNumber: string;
+  patientName: string;
+  hospitalNumber: string;
+  test: string;
+  department: string;
+  receivedAt: string;
+  result: string;
+  unit: string;
+  referenceRange: string;
+  interpretation: string;
+  notes: string;
+  submittedBy: string;
+  submittedAt: string;
+  status: ReviewStatus;
+}
 
 const filters = [
   "All",
@@ -15,13 +84,28 @@ const filters = [
   "Rejected",
 ] as const;
 
-type ReviewFilter = (typeof filters)[number];
+type ReviewFilter = (typeof filters)[number] | "All";
+
+function mapResultStatus(status: string): ReviewStatus {
+  switch (status) {
+    case "Awaiting Review":
+      return "Pending Review";
+    case "Approved":
+    case "Rejected":
+    case "Draft":
+      return status;
+    default:
+      return "Unknown";
+  }
+}
 
 function StatusBadge({ status }: { status: ReviewStatus }) {
   const styles: Record<ReviewStatus, string> = {
     "Pending Review": "bg-warning-soft text-warning",
     Approved: "bg-primary-soft text-primary",
     Rejected: "bg-danger-soft text-danger",
+    Draft: "bg-muted-surface text-muted",
+    Unknown: "bg-muted-surface text-muted",
   };
 
   return (
@@ -49,15 +133,115 @@ function DetailItem({
 }
 
 export default function ResultReview() {
-  const [records, setRecords] = useState(initialReviewRecords);
+  const [records, setRecords] = useState<ReviewRecord[]>([]);
   const [filter, setFilter] = useState<ReviewFilter>("Pending Review");
-  const [selectedId, setSelectedId] = useState(
-    initialReviewRecords[0]?.id ?? "",
-  );
+  const [selectedId, setSelectedId] = useState("");
   const [search, setSearch] = useState("");
   const [rejecting, setRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    async function loadResults() {
+      try {
+        setLoading(true);
+        setLoadError("");
+
+        const [resultData, requestData, sampleData, patientData, testData, departmentData] =
+          await Promise.all([
+            apiRequestAll<ApiResult>("/results/"),
+            apiRequestAll<ApiTestRequest>("/test-requests/"),
+            apiRequestAll<ApiSample>("/samples/"),
+            apiRequestAll<ApiPatient>("/patients/"),
+            apiRequestAll<ApiTest>("/tests/?active_only=false"),
+            apiRequest("/departments/") as Promise<ApiDepartment[]>,
+          ]);
+
+        const requestsById = new Map(
+          requestData.map((request) => [request.id, request])
+        );
+        const samplesById = new Map(
+          sampleData.map((sample) => [sample.id, sample])
+        );
+        const patientsById = new Map(
+          patientData.map((patient) => [patient.id, patient])
+        );
+        const testsById = new Map(testData.map((test) => [test.id, test]));
+        const departmentsById = new Map(
+          departmentData.map((department) => [department.id, department])
+        );
+
+        const formattedResults = resultData.map((result): ReviewRecord => {
+          const request = requestsById.get(result.test_request_id);
+          const sample = request
+            ? samplesById.get(request.sample_id)
+            : undefined;
+          const patient = sample
+            ? patientsById.get(sample.patient_id)
+            : undefined;
+          const test =
+            request?.test_id == null
+              ? undefined
+              : testsById.get(request.test_id);
+          const department = request
+            ? departmentsById.get(request.department_id)
+            : undefined;
+
+          return {
+            id: result.result_id,
+            sampleId: sample ? String(sample.id) : "",
+            sampleNumber: sample?.sample_id ?? "Sample information unavailable",
+            patientName: patient
+              ? `${patient.first_name} ${patient.last_name}`
+              : "Patient information unavailable",
+            hospitalNumber: patient?.hospital_number ?? "Not available",
+            test:
+              test?.name ??
+              request?.custom_test_name ??
+              "Test information unavailable",
+            department: department?.name ?? "Department information unavailable",
+            receivedAt: sample
+              ? new Date(sample.received_datetime).toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })
+              : "Not available",
+            result: result.result_value,
+            unit: result.unit ?? "Not specified",
+            referenceRange: result.reference_range ?? "Not specified",
+            interpretation: result.interpretation ?? "Not specified",
+            notes: result.comments ?? "No laboratory notes.",
+            submittedBy: result.performed_by,
+            submittedAt: new Date(result.created_at).toLocaleString("en-GB"),
+            status: mapResultStatus(result.status),
+          };
+        });
+
+        setRecords(formattedResults);
+        setSelectedId((current) =>
+          formattedResults.some((record) => record.id === current)
+            ? current
+            : formattedResults.find(
+                (record) => record.status === "Pending Review",
+              )?.id ?? ""
+        );
+      } catch (error) {
+        setLoadError(
+          error instanceof Error ? error.message : "Unable to load results."
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadResults();
+  }, [loadAttempt]);
 
   const filteredRecords = useMemo(() => {
     return records.filter((record) => {
@@ -91,34 +275,68 @@ export default function ResultReview() {
     (record) => record.status === "Rejected",
   ).length;
 
-  function updateStatus(
-    recordId: string,
-    status: ReviewStatus,
-  ) {
-    setRecords((current) =>
-      current.map((record) =>
-        record.id === recordId ? { ...record, status } : record,
-      ),
-    );
+  async function reviewResult(decision: "approve" | "reject") {
+    if (!selectedRecord || saving) {
+      return;
+    }
 
-    setRejecting(false);
-    setRejectionReason("");
-    setFeedback(
-      status === "Approved"
-        ? "Result approved successfully in this demo."
-        : "Result rejected successfully in this demo.",
-    );
+    setSaving(true);
+    setActionError("");
+    setFeedback("");
+
+    try {
+      const updatedResult: ApiResult = await apiRequest(
+        `/results/${selectedRecord.id}/review`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            decision,
+            ...(decision === "reject"
+              ? { review_comments: rejectionReason.trim() }
+              : {}),
+          }),
+        }
+      );
+
+      setRecords((current) =>
+        current.map((record) =>
+          record.id === updatedResult.result_id
+            ? {
+                ...record,
+                status: mapResultStatus(updatedResult.status),
+                notes: updatedResult.comments ?? record.notes,
+              }
+            : record
+        )
+      );
+      setRejecting(false);
+      setRejectionReason("");
+      setFeedback(
+        decision === "approve"
+          ? "Result approved successfully."
+          : "Result rejected and returned for correction."
+      );
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Unable to update result."
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleFilterChange(nextFilter: ReviewFilter) {
     setFilter(nextFilter);
     setFeedback("");
+    setActionError("");
     setRejecting(false);
   }
 
   function selectRecord(recordId: string) {
     setSelectedId(recordId);
     setFeedback("");
+    setActionError("");
     setRejecting(false);
     setRejectionReason("");
   }
@@ -217,7 +435,24 @@ export default function ResultReview() {
           </div>
 
           <div className="max-h-[720px] overflow-y-auto">
-            {filteredRecords.map((record) => (
+            {loading ? (
+              <p className="px-5 py-12 text-center text-sm text-muted">
+                Loading results...
+              </p>
+            ) : loadError ? (
+              <div className="px-5 py-8 text-center">
+                <p role="alert" className="text-sm text-danger">
+                  {loadError}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+                  className="mt-3 text-sm font-medium text-primary hover:underline"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : filteredRecords.map((record) => (
               <button
                 key={record.id}
                 type="button"
@@ -249,9 +484,11 @@ export default function ResultReview() {
               </button>
             ))}
 
-            {filteredRecords.length === 0 && (
+            {!loading && !loadError && filteredRecords.length === 0 && (
               <p className="px-5 py-12 text-center text-sm text-muted">
-                No results match your search or filter.
+                {records.length === 0
+                  ? "No results are available."
+                  : "No results match your search or filter."}
               </p>
             )}
           </div>
@@ -260,25 +497,21 @@ export default function ResultReview() {
         <ReviewDetails
           record={selectedRecord}
           feedback={feedback}
+          actionError={actionError}
           rejecting={rejecting}
           rejectionReason={rejectionReason}
-          onApprove={() =>
-            selectedRecord &&
-            updateStatus(selectedRecord.id, "Approved")
-          }
+          saving={saving}
+          onApprove={() => void reviewResult("approve")}
           onRejectStart={() => {
             setRejecting(true);
             setFeedback("");
+            setActionError("");
           }}
           onRejectCancel={() => {
             setRejecting(false);
             setRejectionReason("");
           }}
-          onRejectConfirm={() =>
-            selectedRecord &&
-            rejectionReason.trim() &&
-            updateStatus(selectedRecord.id, "Rejected")
-          }
+          onRejectConfirm={() => void reviewResult("reject")}
           onReasonChange={setRejectionReason}
         />
       </div>
@@ -295,7 +528,24 @@ export default function ResultReview() {
             </p>
           </div>
 
-          {filteredRecords.map((record) => (
+          {loading ? (
+            <p className="px-5 py-12 text-center text-sm text-muted">
+              Loading results...
+            </p>
+          ) : loadError ? (
+            <div className="px-5 py-8 text-center">
+              <p role="alert" className="text-sm text-danger">
+                {loadError}
+              </p>
+              <button
+                type="button"
+                onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+                className="mt-3 text-sm font-medium text-primary hover:underline"
+              >
+                Retry
+              </button>
+            </div>
+          ) : filteredRecords.map((record) => (
             <button
               key={record.id}
               type="button"
@@ -324,9 +574,11 @@ export default function ResultReview() {
             </button>
           ))}
 
-          {filteredRecords.length === 0 && (
+          {!loading && !loadError && filteredRecords.length === 0 && (
             <p className="px-5 py-12 text-center text-sm text-muted">
-              No results match your search or filter.
+              {records.length === 0
+                ? "No results are available."
+                : "No results match your search or filter."}
             </p>
           )}
         </section>
@@ -334,25 +586,21 @@ export default function ResultReview() {
         <ReviewDetails
           record={selectedRecord}
           feedback={feedback}
+          actionError={actionError}
           rejecting={rejecting}
           rejectionReason={rejectionReason}
-          onApprove={() =>
-            selectedRecord &&
-            updateStatus(selectedRecord.id, "Approved")
-          }
+          saving={saving}
+          onApprove={() => void reviewResult("approve")}
           onRejectStart={() => {
             setRejecting(true);
             setFeedback("");
+            setActionError("");
           }}
           onRejectCancel={() => {
             setRejecting(false);
             setRejectionReason("");
           }}
-          onRejectConfirm={() =>
-            selectedRecord &&
-            rejectionReason.trim() &&
-            updateStatus(selectedRecord.id, "Rejected")
-          }
+          onRejectConfirm={() => void reviewResult("reject")}
           onReasonChange={setRejectionReason}
         />
       </div>
@@ -363,8 +611,10 @@ export default function ResultReview() {
 interface ReviewDetailsProps {
   record: ReviewRecord | null;
   feedback: string;
+  actionError: string;
   rejecting: boolean;
   rejectionReason: string;
+  saving: boolean;
   onApprove: () => void;
   onRejectStart: () => void;
   onRejectCancel: () => void;
@@ -375,8 +625,10 @@ interface ReviewDetailsProps {
 function ReviewDetails({
   record,
   feedback,
+  actionError,
   rejecting,
   rejectionReason,
+  saving,
   onApprove,
   onRejectStart,
   onRejectCancel,
@@ -417,7 +669,7 @@ function ReviewDetails({
         <DetailItem label="Hospital number" value={record.hospitalNumber} />
         <DetailItem label="Requested test" value={record.test} />
         <DetailItem label="Department" value={record.department} />
-        <DetailItem label="Priority" value={record.priority} />
+        <DetailItem label="Priority" value="Not tracked by the backend" />
         <DetailItem label="Received date" value={record.receivedAt} />
       </div>
 
@@ -452,8 +704,8 @@ function ReviewDetails({
           Submission information
         </h3>
 
-        <DetailItem label="Submitted by" value={record.submittedBy} />
-        <DetailItem label="Submitted date" value={record.submittedAt} />
+        <DetailItem label="Performed by" value={record.submittedBy} />
+        <DetailItem label="Result recorded at" value={record.submittedAt} />
 
         <div className="pt-3">
           <p className="text-xs text-muted">Laboratory notes</p>
@@ -469,6 +721,15 @@ function ReviewDetails({
           className="mb-4 rounded-lg bg-primary-soft px-4 py-3 text-sm text-primary"
         >
           {feedback}
+        </p>
+      )}
+
+      {actionError && (
+        <p
+          role="alert"
+          className="mb-4 rounded-lg bg-danger-soft/40 px-4 py-3 text-sm text-danger"
+        >
+          {actionError}
         </p>
       )}
 
@@ -493,19 +754,20 @@ function ReviewDetails({
           <div className="mt-3 flex flex-wrap justify-end gap-2">
             <button
               type="button"
+              disabled={saving}
               onClick={onRejectCancel}
-              className="h-10 rounded-lg border border-border bg-white px-4 text-sm font-medium text-foreground"
+              className="h-10 rounded-lg border border-border bg-white px-4 text-sm font-medium text-foreground disabled:opacity-50"
             >
               Cancel
             </button>
 
             <button
               type="button"
-              disabled={!rejectionReason.trim()}
+              disabled={!rejectionReason.trim() || saving}
               onClick={onRejectConfirm}
               className="h-10 rounded-lg bg-danger px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Confirm rejection
+              {saving ? "Submitting..." : "Confirm rejection"}
             </button>
           </div>
         </div>
@@ -515,18 +777,20 @@ function ReviewDetails({
         <div className="flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:justify-end">
           <button
             type="button"
+            disabled={saving}
             onClick={onRejectStart}
-            className="h-11 rounded-lg border border-danger px-5 text-sm font-medium text-danger hover:bg-danger-soft"
+            className="h-11 rounded-lg border border-danger px-5 text-sm font-medium text-danger hover:bg-danger-soft disabled:opacity-50"
           >
             Reject result
           </button>
 
           <button
             type="button"
+            disabled={saving}
             onClick={onApprove}
-            className="h-11 rounded-lg bg-primary px-5 text-sm font-medium text-white hover:opacity-90"
+            className="h-11 rounded-lg bg-primary px-5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
-            Approve result
+            {saving ? "Submitting..." : "Approve result"}
           </button>
         </div>
       )}
@@ -534,20 +798,21 @@ function ReviewDetails({
       {record.status !== "Pending Review" && (
         <div className="border-t border-border pt-5">
           <p className="text-sm text-muted">
-            This result has already been {record.status.toLowerCase()} in this
-            demo.
+            {record.status === "Draft"
+              ? "This result has not yet been submitted for supervisor review."
+              : `This result is ${record.status.toLowerCase()} and cannot be reviewed again.`}
           </p>
         </div>
       )}
 
-      <div className="mt-5">
+      {record.sampleId && <div className="mt-5">
         <Link
-          href={`/samples/${record.id}`}
+          href={`/samples/${record.sampleId}`}
           className="text-sm font-medium text-primary hover:underline"
         >
           View sample details
         </Link>
-      </div>
+      </div>}
     </section>
   );
 }

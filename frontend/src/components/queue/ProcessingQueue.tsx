@@ -1,15 +1,48 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { samples } from "@/app/lib/sample-data";
-import { CONNECTED_DEPARTMENTS } from "@/app/lib/hospital";
+import { apiRequest } from "@/app/lib/api";
 
 type QueueStatus =
   | "Pending"
   | "In Progress"
   | "Awaiting Result Submission";
+
+interface ApiTestRequest {
+  id: number;
+  request_id: string;
+  sample_id: number;
+  test_id: number | null;
+  department_id: number;
+  custom_test_name: string | null;
+  status: string;
+}
+
+interface ApiSample {
+  id: number;
+  sample_id: string;
+  patient_id: number;
+  received_datetime: string;
+}
+
+interface ApiPatient {
+  id: number;
+  first_name: string;
+  last_name: string;
+}
+
+interface ApiTest {
+  id: number;
+  name: string;
+}
+
+interface ApiDepartment {
+  id: number;
+  name: string;
+  is_active: boolean;
+}
 
 interface QueueItem {
   id: string;
@@ -21,22 +54,6 @@ interface QueueItem {
   receivedTime: string;
   status: QueueStatus;
 }
-
-const queueItems: QueueItem[] = samples.map((sample) => ({
-  id: sample.id,
-  sampleNumber: sample.sampleNumber,
-  patientName: sample.patientName,
-  test: sample.test,
-  department: sample.department,
-  receivedAt: sample.receivedAt,
-  receivedTime: sample.receivedTime,
-  status:
-    sample.status === "Pending"
-      ? "Pending"
-      : sample.status === "Completed"
-        ? "Awaiting Result Submission"
-        : "In Progress",
-}));
 
 const statusFilters = [
   "All",
@@ -89,9 +106,125 @@ function SearchIcon() {
 }
 
 export default function ProcessingQueue() {
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  const [departments, setDepartments] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
+
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("All departments");
   const [status, setStatus] = useState<StatusFilter>("All");
+
+  useEffect(() => {
+    async function fetchQueue() {
+      try {
+        setLoading(true);
+        setFetchError("");
+
+        const [
+          requestData,
+          sampleData,
+          patientData,
+          testData,
+          departmentData,
+        ] = await Promise.all([
+          apiRequest("/test-requests/"),
+          apiRequest("/samples/"),
+          apiRequest("/patients/"),
+          apiRequest("/tests/"),
+          apiRequest("/departments/"),
+        ]);
+
+        const requests = requestData as ApiTestRequest[];
+        const samples = sampleData as ApiSample[];
+        const patients = patientData as ApiPatient[];
+        const tests = testData as ApiTest[];
+        const departmentList = departmentData as ApiDepartment[];
+
+        setDepartments(
+          departmentList
+            .filter((item) => item.is_active)
+            .map((item) => item.name)
+        );
+
+        const formattedItems: QueueItem[] = requests
+          .filter((request) =>
+            ["Requested", "Processing", "Awaiting Review"].includes(
+              request.status
+            )
+          )
+          .map((request) => {
+            const sample = samples.find(
+              (item) => item.id === request.sample_id
+            );
+
+            const patient = sample
+              ? patients.find((item) => item.id === sample.patient_id)
+              : undefined;
+
+            const test = tests.find(
+              (item) => item.id === request.test_id
+            );
+
+            const departmentRecord = departmentList.find(
+              (item) => item.id === request.department_id
+            );
+
+            if (!sample || !patient) {
+              return null;
+            }
+
+            const receivedDate = new Date(sample.received_datetime);
+
+            const receivedAt = receivedDate.toLocaleDateString("en-GB", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            });
+
+            const receivedTime = receivedDate.toLocaleTimeString("en-GB", {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+
+            let displayStatus: QueueStatus;
+
+            if (request.status === "Requested") {
+              displayStatus = "Pending";
+            } else if (request.status === "Processing") {
+              displayStatus = "In Progress";
+            } else {
+              displayStatus = "Awaiting Result Submission";
+            }
+
+            return {
+              // Business request ID is used by the processing route.
+              id: request.request_id,
+              sampleNumber: sample.sample_id,
+              patientName: `${patient.first_name} ${patient.last_name}`,
+              test: test?.name || request.custom_test_name || "Custom test",
+              department: departmentRecord?.name || "Unknown department",
+              receivedAt,
+              receivedTime,
+              status: displayStatus,
+            };
+          })
+          .filter((item): item is QueueItem => item !== null);
+
+        setQueueItems(formattedItems);
+      } catch (err) {
+        setFetchError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load the processing queue."
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchQueue();
+  }, []);
 
   const filteredItems = useMemo(() => {
     return queueItems.filter((item) => {
@@ -112,19 +245,38 @@ export default function ProcessingQueue() {
 
       return matchesSearch && matchesDepartment && matchesStatus;
     });
-  }, [search, department, status]);
+  }, [queueItems, search, department, status]);
 
   const pendingCount = queueItems.filter(
-    (item) => item.status === "Pending",
+    (item) => item.status === "Pending"
   ).length;
 
   const inProgressCount = queueItems.filter(
-    (item) => item.status === "In Progress",
+    (item) => item.status === "In Progress"
   ).length;
 
   const awaitingCount = queueItems.filter(
-    (item) => item.status === "Awaiting Result Submission",
+    (item) => item.status === "Awaiting Result Submission"
   ).length;
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-border bg-white p-8 text-center">
+        <p className="text-sm text-muted">Loading processing queue...</p>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="rounded-xl border border-border bg-white p-6">
+        <p className="text-sm font-medium text-danger">
+          Could not load the processing queue.
+        </p>
+        <p className="mt-2 text-sm text-muted">{fetchError}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -197,7 +349,7 @@ export default function ProcessingQueue() {
             >
               <option value="All departments">All departments</option>
 
-              {CONNECTED_DEPARTMENTS.map((item) => (
+              {departments.map((item) => (
                 <option key={item} value={item}>
                   {item}
                 </option>
@@ -312,7 +464,7 @@ export default function ProcessingQueue() {
                       </Link>
 
                       <Link
-                        href={`/samples/${item.id}`}
+                        href={`/samples/${item.sampleNumber}`}
                         className="text-xs text-muted hover:text-primary"
                       >
                         View sample
@@ -393,7 +545,7 @@ export default function ProcessingQueue() {
               </Link>
 
               <Link
-                href={`/samples/${item.id}`}
+                href={`/samples/${item.sampleNumber}`}
                 className="text-sm font-medium text-muted hover:text-primary"
               >
                 View sample details

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   ActivityIcon,
@@ -15,19 +15,14 @@ import {
   Card,
   EmptyState,
   MetricCard,
-  PriorityBadge,
   SectionHeading,
   StatusBadge,
 } from "./DashboardComponents";
 
-import {
-  dashboardStats,
-  departmentWorkload,
-  prioritySamples,
-  recentSamples,
-} from "@/app/lib/dashboard-data";
+import { departmentWorkload as departmentPalette } from "@/app/lib/dashboard-data";
 
 import type { SampleStatus } from "@/app/lib/dashboard-data";
+import { apiRequest, apiRequestAll } from "@/app/lib/api";
 
 type FilterType = "All" | "Registered" | "In progress" | "Completed" | "Exceptions";
 
@@ -38,6 +33,278 @@ const filters: FilterType[] = [
   "Completed",
   "Exceptions",
 ];
+
+interface ApiPatient {
+  id: number;
+  first_name: string;
+  last_name: string;
+  hospital_number: string;
+}
+
+interface ApiSample {
+  id: number;
+  sample_id: string;
+  patient_id: number;
+  received_datetime: string;
+  status: string;
+}
+
+interface ApiTestRequest {
+  id: number;
+  sample_id: number;
+  test_id: number | null;
+  department_id: number;
+  custom_test_name: string | null;
+  status: string;
+}
+
+interface ApiTest {
+  id: number;
+  name: string;
+}
+
+interface ApiResult {
+  id: number;
+  status: string;
+}
+
+interface ApiDepartment {
+  id: number;
+  name: string;
+}
+
+interface DashboardMetric {
+  label: string;
+  value: string;
+  change: string;
+  description: string;
+  type: "neutral" | "warning" | "info" | "success";
+}
+
+interface DashboardSample {
+  id: string;
+  sampleNumber: string;
+  patient: string;
+  hospitalNumber: string;
+  test: string;
+  department: string;
+  receivedAt: string;
+  status: SampleStatus;
+}
+
+interface DepartmentWorkloadItem {
+  name: string;
+  total: number;
+  completed: number;
+  color: string;
+}
+
+interface AttentionItem {
+  id: number;
+  patient: string;
+  sampleNumber: string;
+  test: string;
+  department: string;
+  status: "Awaiting approval" | "Awaiting review";
+}
+
+interface DashboardData {
+  metrics: DashboardMetric[];
+  departments: DepartmentWorkloadItem[];
+  attentionItems: AttentionItem[];
+  recentSamples: DashboardSample[];
+}
+
+function buildDashboardData(
+  patients: ApiPatient[],
+  samples: ApiSample[],
+  requests: ApiTestRequest[],
+  tests: ApiTest[],
+  departments: ApiDepartment[],
+  results: ApiResult[],
+): DashboardData {
+  const patientsById = new Map(patients.map((patient) => [patient.id, patient]));
+  const samplesById = new Map(samples.map((sample) => [sample.id, sample]));
+  const testsById = new Map(tests.map((test) => [test.id, test]));
+  const departmentsById = new Map(
+    departments.map((department) => [department.id, department]),
+  );
+  const requestsBySample = new Map<number, ApiTestRequest[]>();
+
+  for (const request of requests) {
+    const sampleRequests = requestsBySample.get(request.sample_id) ?? [];
+    sampleRequests.push(request);
+    requestsBySample.set(request.sample_id, sampleRequests);
+  }
+
+  const recentSamples: DashboardSample[] = [...samples]
+    .sort(
+      (left, right) =>
+        new Date(right.received_datetime).getTime() -
+        new Date(left.received_datetime).getTime(),
+    )
+    .slice(0, 6)
+    .map((sample) => {
+      const patient = patientsById.get(sample.patient_id);
+      const sampleRequests = requestsBySample.get(sample.id) ?? [];
+      const requestedTests = sampleRequests
+        .map((request) =>
+          request.test_id === null
+            ? request.custom_test_name
+            : testsById.get(request.test_id)?.name,
+        )
+        .filter((name): name is string => Boolean(name));
+      const requestedDepartments = sampleRequests
+        .map(
+          (request) => departmentsById.get(request.department_id)?.name,
+        )
+        .filter((name): name is string => Boolean(name));
+      const hasCompletedRequest = sampleRequests.some(
+        (request) => request.status === "Completed",
+      );
+      const hasActiveRequest = sampleRequests.some((request) =>
+        ["Processing", "Awaiting Review"].includes(request.status),
+      );
+      const displayStatus: SampleStatus =
+        sample.status === "On Hold" || sample.status === "Cancelled"
+          ? "Pending"
+          : hasCompletedRequest
+            ? "Completed"
+            : hasActiveRequest
+              ? "Processing"
+              : "Received";
+
+      return {
+        id: String(sample.id),
+        sampleNumber: sample.sample_id,
+        patient: patient
+          ? `${patient.first_name} ${patient.last_name}`
+          : "Patient information unavailable",
+        hospitalNumber: patient?.hospital_number ?? "Not available",
+        test: [...new Set(requestedTests)].join(", ") || "Not assigned",
+        department:
+          [...new Set(requestedDepartments)].join(", ") || "Not assigned",
+        receivedAt: new Date(sample.received_datetime).toLocaleString(
+          "en-GB",
+          { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" },
+        ),
+        status: displayStatus,
+      };
+    });
+
+  const workload = new Map<
+    number,
+    { total: number; completed: number }
+  >();
+  for (const request of requests) {
+    const current = workload.get(request.department_id) ?? {
+      total: 0,
+      completed: 0,
+    };
+    current.total += 1;
+    if (request.status === "Completed") {
+      current.completed += 1;
+    }
+    workload.set(request.department_id, current);
+  }
+
+  const departmentItems = departments.map((department) => {
+    const counts = workload.get(department.id) ?? { total: 0, completed: 0 };
+    const paletteColor = departmentPalette.find(
+      (item) => item.name === department.name,
+    )?.color;
+
+    return {
+      name: department.name,
+      ...counts,
+      color: paletteColor ?? "#607D8B",
+    };
+  });
+
+  const attentionItems: AttentionItem[] = requests
+    .filter(
+      (request) =>
+        request.status === "Pending Approval" ||
+        request.status === "Awaiting Review",
+    )
+    .map((request) => {
+      const sample = samplesById.get(request.sample_id);
+      const patient = sample
+        ? patientsById.get(sample.patient_id)
+        : undefined;
+      const test =
+        request.test_id === null
+          ? request.custom_test_name
+          : testsById.get(request.test_id)?.name;
+
+      return {
+        id: request.id,
+        patient: patient
+          ? `${patient.first_name} ${patient.last_name}`
+          : "Patient information unavailable",
+        sampleNumber: sample?.sample_id ?? "Sample information unavailable",
+        test: test ?? "Test information unavailable",
+        department:
+          departmentsById.get(request.department_id)?.name ??
+          "Department information unavailable",
+        status:
+          request.status === "Pending Approval"
+            ? "Awaiting approval"
+            : "Awaiting review",
+      };
+    });
+
+  const pendingRequests = requests.filter(
+    (request) =>
+      request.status === "Requested" ||
+      request.status === "Pending Approval",
+  ).length;
+  const processingRequests = requests.filter(
+    (request) => request.status === "Processing",
+  ).length;
+  const completedRequests = requests.filter(
+    (request) => request.status === "Completed",
+  ).length;
+  const approvedResultCount = results.filter(
+    (result) => result.status === "Approved",
+  ).length;
+
+  return {
+    metrics: [
+      {
+        label: "Total samples",
+        value: String(samples.length),
+        change: "Current",
+        description: "samples in the backend",
+        type: "neutral",
+      },
+      {
+        label: "Pending requests",
+        value: String(pendingRequests),
+        change: "Current",
+        description: "awaiting processing or approval",
+        type: "warning",
+      },
+      {
+        label: "Processing tests",
+        value: String(processingRequests),
+        change: "Current",
+        description: "test requests in progress",
+        type: "info",
+      },
+      {
+        label: "Completed tests",
+        value: String(completedRequests),
+        change: "Current",
+        description: `${approvedResultCount} approved results`,
+        type: "success",
+      },
+    ],
+    departments: departmentItems,
+    attentionItems,
+    recentSamples,
+  };
+}
 
 function DashboardIconSmall({
   children,
@@ -88,7 +355,7 @@ function DashboardHeader() {
   );
 }
 
-function MetricsSection() {
+function MetricsSection({ metrics }: { metrics: DashboardMetric[] }) {
   const icons = [
     <SamplesIcon key="samples" size={17} />,
     <QueueIcon key="pending" size={17} />,
@@ -99,7 +366,7 @@ function MetricsSection() {
   return (
     <Card className="mt-7">
       <div className="grid grid-cols-2 divide-x divide-y divide-line lg:grid-cols-4 lg:divide-y-0">
-        {dashboardStats.map((stat, index) => (
+        {metrics.map((stat, index) => (
           <MetricCard
             key={stat.label}
             {...stat}
@@ -111,150 +378,165 @@ function MetricsSection() {
   );
 }
 
-function DepartmentWorkload() {
+function DepartmentWorkload({
+  departments,
+}: {
+  departments: DepartmentWorkloadItem[];
+}) {
   return (
     <Card className="p-5">
       <SectionHeading
         title="Department workload"
-        description="Sample activity across laboratory departments"
+        description="Test requests grouped by laboratory department"
       />
 
-      <div className="mt-6 space-y-5">
-        {departmentWorkload.map((department) => {
-          const percentage = Math.round(
-            (department.completed / department.total) * 100
-          );
+      {departments.length === 0 ? (
+        <div className="mt-6">
+          <EmptyState message="No department request data is available." />
+        </div>
+      ) : (
+        <div className="mt-6 space-y-5">
+          {departments.map((department) => {
+            const percentage = department.total
+              ? Math.round((department.completed / department.total) * 100)
+              : 0;
 
-          return (
-            <div key={department.name}>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-label font-medium text-ink">
-                  {department.name}
-                </p>
+            return (
+              <div key={department.name}>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-label font-medium text-ink">
+                    {department.name}
+                  </p>
 
-                <p className="shrink-0 text-caption text-muted">
-                  {department.completed}/{department.total}
-                </p>
+                  <p className="shrink-0 text-caption text-muted">
+                    {department.total} requests · {department.completed} completed
+                  </p>
+                </div>
+
+                <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${percentage}%`,
+                      backgroundColor: department.color,
+                    }}
+                  />
+                </div>
               </div>
-
-              <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{
-                    width: `${percentage}%`,
-                    backgroundColor: department.color,
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="mt-6 flex items-center gap-2 border-t border-line pt-4">
         <HospitalIcon size={16} className="text-muted" />
 
         <p className="text-caption text-muted">
-          Five connected laboratory departments
+          {departments.length} departments from the backend
         </p>
       </div>
     </Card>
   );
 }
 
-function PrioritySection() {
+function PrioritySection({
+  attentionItems,
+}: {
+  attentionItems: AttentionItem[];
+}) {
   return (
     <Card className="p-5">
       <SectionHeading
-        title="Priority samples"
-        description="Urgent samples requiring attention"
+        title="Requests needing attention"
+        description="Custom tests awaiting approval and results awaiting review"
         action={
-          <span className="rounded-badge bg-danger-soft px-2 py-1 text-caption font-medium text-danger">
-            {prioritySamples.length} urgent
+          <span className="rounded-badge bg-warning-soft px-2 py-1 text-caption font-medium text-warning">
+            {attentionItems.length} requests
           </span>
         }
       />
 
-      <div className="mt-5 space-y-0">
-        {prioritySamples.map((sample, index) => (
-          <div
-            key={sample.id}
-            className={`py-4 ${
-              index !== prioritySamples.length - 1
-                ? "border-b border-line"
-                : ""
-            }`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-label font-semibold text-ink">
-                  {sample.patient}
-                </p>
+      {attentionItems.length === 0 ? (
+        <div className="mt-5">
+          <EmptyState message="No requests are currently awaiting approval or review." />
+        </div>
+      ) : (
+        <div className="mt-5 space-y-0">
+          {attentionItems.map((item, index) => (
+            <div
+              key={item.id}
+              className={`py-4 ${
+                index !== attentionItems.length - 1
+                  ? "border-b border-line"
+                  : ""
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-label font-semibold text-ink">
+                    {item.patient}
+                  </p>
 
-                <p className="mt-1 text-caption text-muted">
-                  {sample.test}
-                </p>
+                  <p className="mt-1 text-caption text-muted">
+                    {item.sampleNumber} · {item.test}
+                  </p>
 
-                <p className="mt-2 text-micro text-muted">
-                  {sample.department}
-                </p>
-              </div>
+                  <p className="mt-2 text-micro text-muted">
+                    {item.department}
+                  </p>
+                </div>
 
-              <div className="shrink-0 text-right">
-                <span className="rounded-badge bg-danger-soft px-2 py-1 text-micro font-medium text-danger">
-                  Urgent
-                </span>
-
-                <p className="mt-3 text-caption text-muted">
-                  {sample.wait}
-                </p>
+                <div className="shrink-0 text-right">
+                  <span className="rounded-badge bg-warning-soft px-2 py-1 text-micro font-medium text-warning">
+                    {item.status}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </Card>
   );
 }
 
-function RecentSamples() {
+function RecentSamples({ samples }: { samples: DashboardSample[] }) {
   const [activeFilter, setActiveFilter] = useState<FilterType>("All");
 
   const filteredSamples = useMemo(() => {
     switch (activeFilter) {
       case "Registered":
-        return recentSamples.filter(
+        return samples.filter(
           (sample) => sample.status === "Received"
         );
 
       case "In progress":
-        return recentSamples.filter(
+        return samples.filter(
           (sample) => sample.status === "Processing"
         );
 
       case "Completed":
-        return recentSamples.filter(
+        return samples.filter(
           (sample) => sample.status === "Completed"
         );
 
       case "Exceptions":
-        return recentSamples.filter(
+        return samples.filter(
           (sample) =>
-            sample.status === "Pending" ||
-            sample.priority === "Urgent"
+            sample.status === "Pending"
         );
 
       default:
-        return recentSamples;
+        return samples;
     }
-  }, [activeFilter]);
+  }, [activeFilter, samples]);
 
   return (
     <Card className="overflow-hidden">
       <div className="p-5 pb-4">
         <SectionHeading
           title="Recent samples"
-          description="Latest samples registered in the laboratory"
+          description="Latest samples recorded in the backend"
         />
 
         <div
@@ -291,7 +573,13 @@ function RecentSamples() {
 
       {filteredSamples.length === 0 ? (
         <div className="px-5 pb-5">
-          <EmptyState message="No samples found for this filter." />
+          <EmptyState
+            message={
+              samples.length === 0
+                ? "No samples are available."
+                : "No samples found for this filter."
+            }
+          />
         </div>
       ) : (
         <>
@@ -334,7 +622,7 @@ function RecentSamples() {
                   >
                     <td className="px-5">
                       <span className="whitespace-nowrap text-caption font-medium text-primary">
-                        {sample.id}
+                        {sample.sampleNumber}
                       </span>
                     </td>
 
@@ -367,7 +655,9 @@ function RecentSamples() {
                     </td>
 
                     <td className="px-5">
-                      <PriorityBadge priority={sample.priority} />
+                      <span className="text-caption text-muted">
+                        Not tracked
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -385,7 +675,7 @@ function RecentSamples() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-caption font-semibold text-primary">
-                      {sample.id}
+                      {sample.sampleNumber}
                     </p>
 
                     <h3 className="mt-2 text-label font-semibold text-ink">
@@ -437,7 +727,9 @@ function RecentSamples() {
                     </p>
 
                     <div className="mt-1">
-                      <PriorityBadge priority={sample.priority} />
+                      <span className="text-caption text-muted">
+                        Not tracked
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -451,19 +743,119 @@ function RecentSamples() {
 }
 
 export default function DashboardView() {
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+
+  useEffect(() => {
+    async function loadDashboard() {
+      try {
+        setLoading(true);
+        setLoadError("");
+
+        const [
+          patients,
+          samples,
+          requests,
+          tests,
+          departments,
+          results,
+        ] = await Promise.all([
+          apiRequestAll<ApiPatient>("/patients/"),
+          apiRequestAll<ApiSample>("/samples/"),
+          apiRequestAll<ApiTestRequest>("/test-requests/"),
+          apiRequestAll<ApiTest>("/tests/?active_only=false"),
+          apiRequest("/departments/") as Promise<ApiDepartment[]>,
+          apiRequestAll<ApiResult>("/results/"),
+        ]);
+
+        setDashboardData(
+          buildDashboardData(
+            patients,
+            samples,
+            requests,
+            tests,
+            departments,
+            results,
+          ),
+        );
+      } catch (error) {
+        setLoadError(
+          error instanceof Error ? error.message : "Unable to load dashboard data.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadDashboard();
+  }, [loadAttempt]);
+
+  const metrics = dashboardData?.metrics ?? [
+    {
+      label: "Total samples",
+      value: "—",
+      change: loading ? "Loading" : "Unavailable",
+      description: "backend data not available",
+      type: "neutral" as const,
+    },
+    {
+      label: "Pending requests",
+      value: "—",
+      change: loading ? "Loading" : "Unavailable",
+      description: "backend data not available",
+      type: "warning" as const,
+    },
+    {
+      label: "Processing tests",
+      value: "—",
+      change: loading ? "Loading" : "Unavailable",
+      description: "backend data not available",
+      type: "info" as const,
+    },
+    {
+      label: "Completed tests",
+      value: "—",
+      change: loading ? "Loading" : "Unavailable",
+      description: "backend data not available",
+      type: "success" as const,
+    },
+  ];
+
   return (
     <div className="space-y-7">
       <DashboardHeader />
 
-      <MetricsSection />
+      {loading && (
+        <p role="status" className="text-sm text-muted">
+          Loading dashboard data...
+        </p>
+      )}
+      {loadError && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-danger/30 bg-danger-soft/40 px-4 py-3">
+          <p role="alert" className="text-sm text-danger">
+            {loadError}
+          </p>
+          <button
+            type="button"
+            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+            className="text-sm font-medium text-danger underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      <MetricsSection metrics={metrics} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_1fr]">
-        <DepartmentWorkload />
+        <DepartmentWorkload departments={dashboardData?.departments ?? []} />
 
-        <PrioritySection />
+        <PrioritySection attentionItems={dashboardData?.attentionItems ?? []} />
       </div>
 
-      <RecentSamples />
+      <RecentSamples samples={dashboardData?.recentSamples ?? []} />
     </div>
   );
 }
