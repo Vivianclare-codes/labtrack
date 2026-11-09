@@ -36,7 +36,7 @@ export function AppShell({
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex-1 px-gutter pb-10 pt-6 outline-none lg:pb-12 lg:pt-8"
+          className="flex-1 px-gutter pb-mobile-nav pt-6 outline-none lg:pb-12 lg:pt-8"
         >
           <div className="mx-auto w-full max-w-content">
             {children}

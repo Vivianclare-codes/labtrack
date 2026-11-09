@@ -262,3 +262,9 @@
 @utility pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+@utility pb-mobile-nav {
+  padding-bottom: calc(
+    var(--spacing-bottom-nav) + env(safe-area-inset-bottom) + 1rem
+  );
+}
