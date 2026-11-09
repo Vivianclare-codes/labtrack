@@ -14,7 +14,8 @@ export type NavId =
   | "queue"
   | "review"
   | "reports"
-  | "activity";
+  | "activity"
+  | "catalogue";
 
 export interface NavItem {
   id: NavId;
@@ -66,6 +67,12 @@ export const NAV_ITEMS: Record<NavId, NavItem> = {
     tabLabel: "Logs",
     href: "/activity-logs",
   },
+  catalogue: {
+    id: "catalogue",
+    label: "Laboratory setup",
+    tabLabel: "Setup",
+    href: "/settings/catalogue",
+  },
 };
 
 const ALL_NAV: NavId[] = [
@@ -85,7 +92,7 @@ interface RoleNav {
 
 const ROLE_NAV: Record<Role, RoleNav> = {
   admin: {
-    sidebar: ALL_NAV,
+    sidebar: [...ALL_NAV, "catalogue"],
     tabs: ["dashboard", "patients", "samples", "reports"],
   },
   receptionist: {

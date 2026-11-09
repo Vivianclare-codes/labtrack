@@ -6,6 +6,7 @@ import {
   ReportsIcon,
   ReviewIcon,
   SamplesIcon,
+  SettingsIcon,
 } from "@/components/ui/icons";
 
 import type { NavId } from "@/app/lib/navigation";
@@ -19,6 +20,7 @@ const ICONS = {
   review: ReviewIcon,
   reports: ReportsIcon,
   activity: ActivityIcon,
+  catalogue: SettingsIcon,
 } satisfies Record<NavId, unknown>;
 
 type NavIconProps = {
