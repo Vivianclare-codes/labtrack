@@ -1,4 +1,4 @@
-import type { NavId, Role } from "./navigation";
+import type { Role } from "./navigation";
 
 export interface SessionUser {
   name: string;
@@ -17,8 +17,4 @@ export interface SessionUser {
 export const demoUser: SessionUser = {
   name: "James Carter",
   role: "admin",
-};
-
-export const demoBadges: Partial<Record<NavId, number>> = {
-  review: 18,
 };

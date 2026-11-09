@@ -1,10 +1,7 @@
 import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/shell/AppShell";
-import {
-  demoBadges,
-  demoUser,
-} from "@/app/lib/session";
+import { demoUser } from "@/app/lib/session";
 
 export default function AppLayout({
   children,
@@ -12,11 +9,6 @@ export default function AppLayout({
   children: ReactNode;
 }) {
   return (
-    <AppShell
-      user={demoUser}
-      badges={demoBadges}
-    >
-      {children}
-    </AppShell>
+    <AppShell user={demoUser}>{children}</AppShell>
   );
 }
