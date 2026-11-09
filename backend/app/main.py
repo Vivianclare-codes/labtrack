@@ -19,7 +19,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://your-labtrack-domain.vercel.app",
+        "https://labtrack-83ud.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
