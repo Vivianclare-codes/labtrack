@@ -240,3 +240,4 @@ When a milestone is worth sharing, the simplest suitable format should be used:
 
 The goal is to document the development journey, not to become a full-time content creator.
 
+nb: backend localhost: uvicorn app.main:app --reload
